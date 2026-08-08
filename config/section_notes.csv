@@ -1,0 +1,9 @@
+tube_id,scan,section_label,action,note,source,date
+37,original,04,flag_artefact,Small hole in the tissue. Section is still usable — the hole simply must not count toward the area denominator. The tissue mask removes it automatically (no tissue = not in the denominator) so no manual step is needed; this row exists so the QC overlay is checked rather than assumed.,wet-lab,2026-08-07
+37,original,03,prefer_section,"the wet-lab scientist's preferred section of the positive pair, because 04 has the hole above.",wet-lab,2026-08-07
+49,rescan,01,exclude_section,"Positive, not a false negative — but there was dirt on the slide and the microscope was slightly out of focus. wet-lab excluded it.",wet-lab,2026-08-07
+49,original,01,flag_artefact,"In focus and usable. There is an artefact to exclude — mark it in the artefact mask rather than dropping the section.",wet-lab,2026-08-07
+49,original,,prefer_scan,"Use the FIRST scan for tube 49, not the rescan: the original's section 01 is in focus and both sections work. This overrides the cohort default of preferring a rescan, which exists only for the two slides re-acquired to fix exposure (51 and 60).",wet-lab,2026-08-07
+33,rescan,01,flag_quality,"Second positive section, imaged 2026-08-05 in spare booking time. wet-lab note: 'the second positive in most of them is not super nice but thought of having it regardless.' Usable, but check the QC overlay before trusting it and consider a sensitivity analysis without these three second sections.",wet-lab,2026-08-07
+42,rescan,02,flag_quality,"Second positive section, imaged 2026-08-05 in spare booking time. Same caveat as tube 33 — quality is lower than the first positive.",wet-lab,2026-08-07
+54,rescan,01,flag_quality,"Second positive section, imaged 2026-08-05 in spare booking time. Same caveat as tube 33 — quality is lower than the first positive.",wet-lab,2026-08-07

@@ -1,0 +1,19 @@
+# never commit data or derived artefacts
+data/
+work/
+*.vsi
+_Image_*_/
+*.ets
+*.xlsx
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+# os
+.DS_Store
+
+# blinding key — never in git, under any name or location
+BlindingKey/
+blinding_key*
+provenance_manifest*

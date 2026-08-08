@@ -1,0 +1,37 @@
+# env/environment.yml — the Python environment for this pipeline.
+#
+#   conda env create -f env/environment.yml
+#   conda activate ihc
+#   ./ihc doctor
+#
+# Pinned to minor version, not to an exact build, so the same file resolves on arm64
+# macOS and x86_64 Linux (the cluster). Record the exact solved versions with
+#   conda list --explicit > env/environment.lock.txt
+# before any run whose numbers will be reported, and commit that lock file. Spec §13:
+# select and freeze one environment rather than taking the newest version at run time.
+#
+# Deliberately small. zarr, dask, shapely, jsonschema, pandera and pydantic are NOT
+# here and should not be added: the standard library plus numpy/pandas covers what
+# this pipeline does, and every extra dependency is another thing to pin, port to the
+# cluster, and explain in the methods.
+#
+# The heavy image work happens in QuPath/ABBA (Java), not here — see env/tool_versions.yaml.
+
+name: ihc
+
+channels:
+  - conda-forge
+
+dependencies:
+  - python=3.11
+  - numpy=2.2.*          # arrays; 64-bit accumulators for area (spec §11)
+  - scipy=1.15.*         # distance transform for the GFAP bands
+  - scikit-image=0.26.*  # morphology, connected components, measurement
+  - imagecodecs=2026.1.* # JPEG2000 tile decoding out of the .ets containers
+  - pandas=2.3.*         # manifests, slides.csv, tabular export
+  - pyyaml=6.0.*         # config/*.yaml
+  - pytest=9.0.*         # tests/
+  # Present in the maintainer's base env and used opportunistically, not required:
+  - tifffile=2026.1.*    # writing OME-TIFF crops for QuPath / inspection
+  - matplotlib=3.10.*    # QC overlays and figures
+  - pyarrow=23.*         # parquet manifests

@@ -1,0 +1,85 @@
+# env/tool_versions.yaml — the non-Python half of the environment.
+#
+# Spec §13: "Select and freeze one environment rather than taking the newest version
+# at run time." These versions are pinned. Changing any of them is a new ADR in
+# docs/decisions.md, a new environment hash, and a full re-run — not an upgrade.
+#
+# Nothing in this file is read by the code. It is read by humans, by the methods
+# section, and by whoever rebuilds this in two years.
+
+schema_version: 1
+decision: D-15
+pinned_on: 2026-08-06
+
+qupath:
+  version: "0.7.0"
+  role: "Human trains pixel classifiers in the GUI; the pipeline applies the frozen
+         classifier headlessly. Also the fallback route for manual region delineation."
+  arch: "arm64 first (maintainer's machine); x86_64 build for the cluster"
+
+abba:
+  name: "ABBA (Aligning Big Brains and Atlases) QuPath extension"
+  version: "0.5.0"
+  role: "Allen mouse atlas registration for hippocampus and isocortex."
+  note: "Verified as the release that adds QuPath 0.7 compatibility. ABBA is not fully
+         automatic: it normally begins with manual estimation of atlas Z-position and
+         slicing angle, so budget human time either way (spec §9)."
+  atlas_release: PENDING_PI_DECISION   # DECISION D-4: atlas release and ontology version
+
+bioformats:
+  version: "8.5.0"
+  role: "Ground-truth cross-check of the pure-Python VSI/ETS reader on a golden subset:
+         series count, dimensions, channel count and order, pixel size, orientation,
+         pyramid structure, decoded pixel values at random coordinates."
+  note: "Verified byte-identical to 6.14.0 on this data. Returns almost NOTHING from a
+         .vsi without its payload folder, which is why the pipeline carries its own
+         index-only metadata reader (validated 8/8 against Bio-Formats on the animals
+         that do have payloads)."
+
+java:
+  version: "8"
+  note: "Sufficient for Bio-Formats metadata AND pixel reading, and for QuPath's
+         bundled runtime. Only bioformats2raw needs Java 11+, and bioformats2raw is
+         not on the current path — the pipeline reads .ets directly."
+
+python:
+  version: "3.11"
+  environment_file: env/environment.yml
+  lock_file: env/environment.lock.txt      # produced with `conda list --explicit`; commit before any reported run
+
+# ---------------------------------------------------------------------------------
+# Recorded with every production run, alongside the versions above (spec §13).
+# ---------------------------------------------------------------------------------
+run_provenance_fields:
+  - git_commit_sha
+  - config_sha256                 # paths.yaml + config.yaml + channels.yaml + slides.csv
+  - raw_manifest_sha256           # hashes of every .vsi AND every companion .ets
+  - classifier_sha256
+  - training_annotation_sha256
+  - atlas_release_and_ontology
+  - validation_animal_list
+  - random_seeds
+  - thread_count                  # where it affects determinism
+  - container_image_digest        # digest, never a mutable tag
+
+# ---------------------------------------------------------------------------------
+# Not yet in use. Listed so the pin exists before the need does.
+# ---------------------------------------------------------------------------------
+deferred:
+  containers: "Apptainer for NAISS/SLURM, Docker for RunPod, same codebase. Earned, not assumed."
+  workflow_manager: "Snakemake, only once the single-image path works."
+
+# Verified working 2026-08-07 on this machine (Apple arm64):
+#   QuPath v0.7.0, build 2026-02-25, commit 04ccfa4
+#   Installed by expanding the .pkg without admin rights:
+#     pkgutil --expand-full QuPath-v0.7.0-Mac-arm64.pkg <dir>
+#   Headless entry point:
+#     <dir>/QuPath-0.7.0-arm64-app.pkg/Payload/QuPath-0.7.0-arm64.app/Contents/MacOS/QuPath-0.7.0-arm64
+#   Bundles its own JRE, so the system Java 8 is irrelevant to QuPath.
+verified_headless:
+  qupath: "0.7.0"
+  date: "2026-08-07"
+  platform: "macOS arm64"
+  note: >
+    QuPath 0.7.0 does not bundle groovy-json; use com.google.gson instead.
+    ProjectIO.loadProject needs BufferedImage.class, not ImageData.class.

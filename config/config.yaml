@@ -1,0 +1,359 @@
+# config/config.yaml — analysis parameters.
+#
+# Units are in the key names wherever a bare number would be ambiguous.
+#
+# ---------------------------------------------------------------------------------
+# THE SENTINEL
+# ---------------------------------------------------------------------------------
+# Any value written as the string PENDING_PI_DECISION is NOT YET DECIDED. It is a
+# string on purpose: any stage that tries to use it arithmetically raises TypeError
+# immediately instead of silently running on a plausible-looking default. Each one
+# names the decision it is waiting on (D-nn in docs/decisions.md).
+#
+# `./ihc check-config` lists every remaining sentinel. A stage that depends on one
+# must refuse to run. Filling one in is a config commit plus an ADR line, nothing else.
+#
+# Decisions marked `pi_approved: false` have a concrete recommended value present but
+# have not been signed off. They may be used for blinded pilots and engineering work;
+# they may NOT be used for any number that reaches the manuscript until approved.
+
+schema_version: 1
+sentinel: PENDING_PI_DECISION
+
+# =================================================================================
+# 1. Pixel geometry — verified facts, asserted rather than assumed
+# =================================================================================
+geometry:
+  # Read per series from metadata; observed range across the cohort 0.32500-0.32502.
+  # Never test bit-equality (spec §5).
+  expected_pixel_size_um: 0.325
+  pixel_size_tolerance_um: 0.0005
+  # True dimensions come from VSI tag 2053. The tile-grid product overestimates by
+  # up to 2.4 % and must never be used as the image size.
+  dimensions_source_tag: 2053
+  section_thickness_um: 5
+
+# =================================================================================
+# 2. Classifier application
+# =================================================================================
+classifier:
+  # D-5 (mine to decide, per docs/decisions.md). Blinded pilot compares candidates on
+  # accuracy against runtime, then ONE value per marker is locked. "Frozen" applies
+  # within a marker; Abeta and GFAP may legitimately differ.
+  # Downsample factor relative to 0.325 um/px native.
+  resolution_downsample:
+    abeta_candidates: [1, 2, 4]
+    gfap_candidates: [1, 2]
+    abeta_locked: PENDING_PI_DECISION      # DECISION D-5: lock after the blinded pilot
+    gfap_locked: PENDING_PI_DECISION       # DECISION D-5: lock after the blinded pilot
+
+  # Input-channel policy (carried forward from EXECUTION_PLAN_v2, §6 of v3):
+  # the Abeta classifier must not see the GFAP channel and vice versa.
+  input_channels:
+    abeta: [Cy3]
+    gfap: [FITC]
+
+  # Recorded with every frozen classifier, and re-checked before every production run.
+  freeze_record_fields: [classifier_file, sha256, training_annotations, resolution,
+                         feature_set, qupath_version, training_animal_list, frozen_at_utc]
+
+  # Tiled execution (spec §11). Halo must exceed the largest spatial kernel AND the
+  # largest distance-band dilation, or objects and bands break at tile seams.
+  tiling:
+    tile_size_px: 4096
+    halo_px: 256                # must be > max(feature kernel radius, 50 um / pixel size = 154 px)
+    area_accumulator_dtype: int64
+    tile_invariance_tolerance_fraction: 0.0     # exact for integer masks
+    tile_invariance_tolerance_float: 1.0e-6     # tolerance for float measures
+
+# =================================================================================
+# 3. Tissue and artefact masks
+# =================================================================================
+# These are segmentation outputs too, and carry the same versioning, overlay and
+# acceptance obligations as the marker classifiers (spec §7).
+masks:
+  tissue:
+    source_channel: DAPI          # tissue presence, not marker signal
+    downsample: 16                # masks are built on a low pyramid level
+    min_object_area_um2: 10000    # drop dust and detached debris
+    fill_holes_max_area_um2: 5000
+    method: PENDING_PI_DECISION   # DECISION D-2: threshold vs trained classifier for tissue
+
+  artefact:
+    # Categories are exported separately so any alternative denominator can be
+    # recomputed without re-running segmentation (spec §7).
+    categories: [fold, tear, hole, debris, missing_edge, out_of_focus]
+    method: PENDING_PI_DECISION   # DECISION D-2: manual annotation vs trained classifier
+    dilate_um: 0
+
+  acquired_support:
+    # THE SPARSE TILE GRID. 5-11 % of tile positions inside the bounding box were
+    # never acquired (scanner sample mask). Never-acquired tiles are MISSING SUPPORT,
+    # not background: they are excluded from the denominator, not counted as negative.
+    # This term is not optional and has no PI decision attached — it is forced by the
+    # data.
+    enabled: true
+    fail_if_sparsity_fraction_above: 0.25   # far outside the observed 0.05-0.11 band
+    report_sparsity_per_series: true
+
+# =================================================================================
+# 4. Percent-area denominator
+# =================================================================================
+denominator:
+  # D-2 recommendation: ROI  n  acquired-support  n  tissue  -  artefact.
+  # Present so pilots can run; NOT signed off, so no reported number may use it yet.
+  pi_approved: false               # DECISION D-2: percent-area denominator
+  components: [anatomical_roi, acquired_support, tissue, minus_artefact]
+  # Every component is exported per image regardless of which denominator is chosen.
+  export_components_um2: [anatomical_roi_area_um2, acquired_support_area_um2,
+                          tissue_area_um2, artefact_area_um2_by_category,
+                          denominator_area_um2, numerator_area_um2, percent_area]
+  min_valid_denominator_um2: PENDING_PI_DECISION   # DECISION D-2/D-4: below this a region is not reported
+
+# =================================================================================
+# 5. Abeta
+# =================================================================================
+abeta:
+  # D-3. Annotate four classes regardless; the PI chooses which feeds the primary
+  # endpoint. Until then the endpoint is undefined and no primary number can be made.
+  positive_class: PENDING_PI_DECISION    # DECISION D-3: parenchymal_extracellular | parenchymal_plus_vascular | all_immunoreactive
+  annotation_classes: [parenchymal_extracellular, vascular, intracellular_ambiguous,
+                       background_artefact]
+  # Naming is not cosmetic: 82E1 + citrate retrieval under-detects N-truncated and
+  # pyroglutamate species, so this is immunoreactive area, not plaque load (spec §5).
+  endpoint_name: "Abeta-immunoreactive area"
+
+  # D-9, secondary endpoint. Object rules must be explicit or counts are meaningless.
+  objects:
+    pi_approved: false                   # DECISION D-9: plaque object rules
+    method: connected_components
+    connectivity: 8
+    split_touching_deposits: false       # no aggressive watershed splitting
+    min_object_area_um2: 20              # provisional; sensitivity at 10 and 50
+    sensitivity_min_area_um2: [10, 50]
+    counting_rule: centroid_in_roi
+    edge_touching_excluded_from_size_summaries: true
+    edge_touching_pixels_retained_in_percent_area: true
+    diffuse_halo_counts_toward_size: PENDING_PI_DECISION   # DECISION D-9: halo policy
+    vascular_amyloid_policy: PENDING_PI_DECISION           # DECISION D-3: CAA handling
+
+# =================================================================================
+# 6. GFAP
+# =================================================================================
+gfap:
+  endpoint_name: "GFAP-immunoreactive area"
+  # Percent area is primary. Explicitly NOT a measure of astrocyte number or of a
+  # defined reactive state (spec §7).
+
+# =================================================================================
+# 7. Intensity measures (secondary, for continuity with the lab's standard method)
+# =================================================================================
+# Median across ALL pixels in a region is dominated by background and largely
+# insensitive to biology. Median across CLASSIFIER-POSITIVE pixels measures signal
+# brightness and is conditional on the classifier. These are different numbers and
+# the lab's historical values use one of them; which one is not yet known.
+intensity:
+  population: PENDING_PI_DECISION        # DECISION (spec §7 [CONFIRM]): all_pixels_in_roi | classifier_positive_pixels
+  statistics: [mean, median]
+  background_adjusted: PENDING_PI_DECISION   # DECISION (spec §7): raw | background_adjusted
+  include_saturated_pixels: PENDING_PI_DECISION  # DECISION (spec §7): saturated-pixel policy
+  value_when_no_positive_pixels: PENDING_PI_DECISION  # DECISION (spec §7): NA vs 0 — they mean different things
+  # Exposure correction. Tubes 51 and 60 were acquired at non-standard exposure.
+  # I* = I_raw / t_exposure_us rescales but does not restore photons; it is a
+  # pre-specified sensitivity analysis, never the primary path (see D-1).
+  exposure_correction:
+    enabled: false
+    formula: "I_raw / exposure_us"
+    applies_to_tubes: [51, 60]
+    prefer_rescan: true
+
+# =================================================================================
+# 8. Local GFAP enrichment around Abeta deposits
+# =================================================================================
+gfap_enrichment:
+  pi_approved: false                # DECISION D-8: distance bands and boundary rules
+  status: exploratory               # stays exploratory until bleed-through is fully characterised
+
+  # Non-overlapping bands, in micrometres. Distances measured from the Abeta-positive
+  # mask, computed on the exact-Euclidean distance transform at pixel resolution.
+  #
+  # NEAR BAND STARTS AT 0 (REVERTED 2026-08-07 — the earlier 10 um floor was wrong)
+  # -----------------------------------------------------------------------------
+  # An earlier bleed-through test found GFAP falling monotonically with distance and
+  # peaking INSIDE the deposit, and that shape was read as an optical bleed-through
+  # signature on the premise that genuine astrogliosis would dip at the amyloid core
+  # and peak in a ring outside. The near band was moved to start at 10 um.
+  #
+  # Both halves of that reasoning were wrong, and adversarial review caught it.
+  #
+  # 1. The premise is contradicted by the literature. Chromogenic DAB GFAP — where
+  #    optical bleed-through is physically impossible — shows the same filled,
+  #    monotonic, plaque-centred pattern (Mandybur & Chuirazzi 1990). In vivo
+  #    two-photon imaging reports explicitly that there are NO plaque-centred
+  #    concentric rings (Galea et al. 2015, PNAS). Olabarria et al. 2010 show
+  #    astroglial hypertrophy at plaques and atrophy far from them — a genuine
+  #    monotonic decline. The measured profile IS the published biology.
+  # 2. The direction was implausible anyway. Cy3 (em ~566 nm) bleeding into a FITC
+  #    band (~515-530 nm) needs anti-Stokes emission. The physically plausible
+  #    direction is FITC -> Cy3, which contaminates the PRIMARY Abeta endpoint, not
+  #    GFAP — and that direction had never been tested.
+  #
+  # It has now been tested directly: far from any deposit (>50 um), Cy3 in the
+  # brightest 5% of GFAP tissue vs GFAP-dim tissue gives ratios of 1.07, 1.10, 1.11
+  # and 1.32 across four animals. Small, and not separable from tissue-property
+  # covariance at this resolution — but an order of magnitude below the peri-plaque
+  # GFAP elevation (up to 2.85x), so it cannot manufacture that signal.
+  #
+  # Single-stain controls would settle both directions with one number and remain the
+  # right answer; declining them on antibody quality was a category error, since
+  # bleed-through is a fluorophore/filter property.
+  bands_um:
+    - {name: abeta_core,  lower_um: null, upper_um: 0,    role: separate_compartment}
+    - {name: near,        lower_um: 0,    upper_um: 25,   role: primary_near}
+    - {name: mid,         lower_um: 25,   upper_um: 50,   role: secondary}
+    - {name: distant,     lower_um: 50,   upper_um: null, role: primary_distant}
+
+  # The >50 um band is the reference, so normalising to it makes GLOBAL astrogliosis
+  # invisible by construction — and a global GFAP increase is exactly what rapamycin
+  # is reported to change. Report absolute GFAP percent area per region alongside the
+  # enrichment contrast, never the contrast alone.
+  report_absolute_gfap_area: true
+
+  primary_contrast: near_minus_distant       # percentage points
+  secondary_contrast: near_over_distant      # ratio; undefined, never pseudocounted, when the
+                                             # distant denominator is below the minimum below
+  min_band_area_um2: PENDING_PI_DECISION     # DECISION D-8: below this the band value is not reported
+  deposits_outside_roi_may_generate_bands_inside: PENDING_PI_DECISION  # DECISION D-8: boundary rule
+  bands_crossing_region_boundaries: PENDING_PI_DECISION                # DECISION D-8: clip vs drop vs assign
+  # Deposit-level summaries are exploratory only. Deposits are not independent
+  # replicates; inference stays at the animal level.
+  deposit_level_export: true
+  deposit_level_is_inferential: false
+
+# =================================================================================
+# 9. Regions
+# =================================================================================
+regions:
+  pi_approved: false                       # DECISION D-4: region definitions
+  # THERE IS NO FRONTAL CORTEX IN THIS DATASET. Sections were cut at hippocampal
+  # level. The cortical endpoint is isocortex at the sampled level (spec §0).
+  endpoints: [hippocampal_formation, isocortex_at_sampled_level]
+  hippocampus_definition: PENDING_PI_DECISION   # DECISION D-4: whole formation vs CA1-3+DG, subiculum in/out
+  cortex_definition: PENDING_PI_DECISION        # DECISION D-4: full thickness pia-to-white-matter?
+  hemisphere_pooling: PENDING_PI_DECISION       # DECISION D-4/D-7: pooled by summing vs separate
+  min_region_area_um2: PENDING_PI_DECISION      # DECISION D-4: minimum valid regional area
+  registration:
+    method: abba                            # Allen atlas via ABBA, manual QuPath as fallback
+    fallback: manual_qupath
+    atlas_release: PENDING_PI_DECISION      # DECISION D-4: atlas release and ontology version
+    allowed_bregma_range_mm: PENDING_PI_DECISION   # DECISION D-4
+    boundary_distance_criterion_um: PENDING_PI_DECISION  # DECISION D-4: acceptance criterion
+    region_overlap_criterion_dice: PENDING_PI_DECISION   # DECISION D-4: acceptance criterion
+    record_method_per_region: true          # and check fallback frequency is unrelated to group
+    hide_marker_channels_while_delineating: true   # spec §9: avoid burden-influenced boundaries
+
+# =================================================================================
+# 10. Negative controls
+# =================================================================================
+negative_control:
+  # THE NON-NEGOTIABLE: condition comes from config/slides.csv, never from pixels.
+  # The image-based separation (GFAP 99.9th percentile within tissue: positives
+  # 3358-5736 vs negatives 196-388, 8.7x with no overlap) is used ONLY as an auditor.
+  # A contradiction is a blocking flag for human review and NEVER an auto-relabel.
+  condition_source: config/slides.csv
+  image_crosscheck_is_auditor_only: true
+  contradiction_action: block_and_flag_for_human_review
+
+  # D-10. The threshold depends on Delta, which is D-11 and unanswered, so it cannot
+  # be filled in yet. Recommended form: min(0.10 pp, Delta/10).
+  pi_approved: false                        # DECISION D-10: negative-control failure rule
+  max_positive_percent_area_pp: PENDING_PI_DECISION   # DECISION D-10/D-11: depends on Delta
+  assessed_per: [section, animal, channel, region]
+  both_negative_sections_must_pass: PENDING_PI_DECISION   # DECISION D-10
+  failure_action: visual_review_and_flag    # never automatic exclusion
+  # SOME ANIMALS HAVE NO NEGATIVE CONTROL AT ALL (4+0 double-positive slides:
+  # tubes 35, 38, 45, 53). The gate is defined per animal-where-negatives-exist and
+  # needs an explicit rule for animals that have none.
+  animals_without_negatives_rule: PENDING_PI_DECISION     # DECISION D-10 sub-rule
+  held_out_negative_sections: true          # never used during classifier development
+
+# =================================================================================
+# 11. Section handling and aggregation
+# =================================================================================
+sections:
+  # Box membership is derived from stage X, never from the section number. The section
+  # number is ACQUISITION ORDER, not slide position — tube 49 proves it (sorted by
+  # stage X the layout is _02 _03 | _01 _04).
+  box_assignment:
+    method: largest_gap_split_on_stage_x
+    expected_gap_ratio_min: 1.7        # observed between-box / within-box gap: 1.7-2.4x
+    expected_gap_ratio_max: 2.4
+    near_label_is_low_stage_x: true    # stage X measures distance from the label end
+    allowed_splits: [[2, 2], [2, 1], [1, 2]]
+    fail_on_unexpected_split: true
+  # Six animals carry three sections, not four.
+  three_section_tubes: [30, 33, 34, 42, 53, 54]
+  # Two sections in one box are the same coronal level sampled twice — a depth check,
+  # not independent replicates (the wet-lab scientist). Left-to-left anterior, right-to-right posterior.
+  within_box_sections_are_independent: false
+  missing_section_rule: use_all_valid_positives_no_imputation
+  flag_animals_with_single_positive_section: true   # tube 42 is the live case
+
+aggregation:
+  pi_approved: false                  # DECISION D-7: section weighting and hemisphere pooling
+  primary: area_weighted              # sum(positive area) / sum(valid area)
+  sensitivity: mean_of_section_percentages
+  hemisphere_pooling: sum_numerator_and_denominator
+
+# =================================================================================
+# 12. Blinding
+# =================================================================================
+blinding:
+  # Coded IDs are drawn from a RANDOM PERMUTATION with a recorded seed. Not sequential
+  # in file-iteration order, not a hash or arithmetic transform of tube_id: tube IDs
+  # run in contiguous treatment blocks, so any order-preserving scheme reproduces the
+  # group structure exactly (spec §2).
+  method: random_permutation
+  seed: PENDING_PI_DECISION           # DECISION D-14: set by the custodian, recorded outside git
+  custodian: PENDING_PI_DECISION      # DECISION D-14: name a person (not the wet-lab scientist, not an annotator)
+  strip_from_blinded_manifest: [tube_id, group, arm, original_path, acquisition_order]
+  exclude_label_image_from_qupath_projects: true
+
+# =================================================================================
+# 13. Validation
+# =================================================================================
+validation:
+  # Partition by ANIMAL, never by image. Sections from one animal share staining,
+  # handling, anatomy and burden, and at ~30 um spacing two sections can contain
+  # profiles of the same plaque.
+  partition_unit: animal
+  split_animals: {development: 6, validation: 9, reserve: 4}   # D-6; rest production-only
+  # All animals still enter the biological analysis — training costs validation
+  # capacity, not sample size.
+  stratify_by: [arm, region, burden_tertile, acquisition_order, exposure_group]
+  agreement_metrics: [icc, bias_percentage_points, mean_absolute_error,
+                      bland_altman_animal_level, positive_class_dice_within_fields]
+  # THE number everything downstream keys off. Nothing can be accepted without it.
+  delta_smallest_meaningful_effect_relative: PENDING_PI_DECISION   # DECISION D-11: proposal is 0.20-0.30
+  acceptance_thresholds_percentage_points: PENDING_PI_DECISION     # DECISION D-11: tie to Delta
+  reference_standard_name: "expert reference standard"             # not "ground truth"
+  require_second_annotator: true    # human-to-human agreement is the ceiling
+
+# =================================================================================
+# 14. QC gates that are not decisions — they are checks on known facts
+# =================================================================================
+qc:
+  expected_vsi_count: 31
+  expected_tube_ids_min: 29
+  expected_tube_ids_max: 60
+  excluded_tubes: [59]                # mounting fault, PAP-pen and antibody leak; pre-imaging, technical
+  expected_tissue_series_per_slide: [3, 4]
+  # A missing .ets stack FAILS SILENTLY: with one stack removed, Bio-Formats still
+  # reported all six named series and conversion exited 0. Explicit inventory is
+  # mandatory, not optional.
+  assert_stack_inventory: true
+  # Dropbox online-only files report a plausible st_size but stall on read.
+  dehydrated_file_check: true
+  dehydrated_block_ratio_threshold: 0.5    # allocated blocks / size below this = suspect
+  hash_algorithm: sha256
+  hash_payload_ets_files: true             # not just the .vsi index

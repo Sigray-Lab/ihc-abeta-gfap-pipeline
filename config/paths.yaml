@@ -1,0 +1,117 @@
+# config/paths.yaml — the single place where storage layout is defined.
+#
+# Every path the pipeline uses is resolved through this file. Nothing else in the
+# codebase may hard-code an absolute path. Moving the data to a cluster, an external
+# disk, or a colleague's laptop is then a one-file edit.
+#
+# Resolution rules (implemented in src/ihc/util/config.py):
+#   * a leading "~" is expanded to the current user's home directory
+#   * "{name}" is substituted with an already-defined root from the `roots:` block
+#   * "{repo_root}" is the directory containing this repository (i.e. containing ./ihc)
+#   * every value is returned as an absolute pathlib.Path
+#
+# ---------------------------------------------------------------------------------
+# WHY .git AND SCRATCH MUST NOT LIVE IN DROPBOX
+# ---------------------------------------------------------------------------------
+# 1. Dropbox syncs file-by-file with no notion of a commit. Two machines editing a
+#    repository inside a synced folder produce "conflicted copy" files *inside .git*,
+#    which corrupts the object store and the index in ways that are tedious to undo.
+#    Git already provides history and sharing; layering Dropbox on top adds only risk.
+# 2. Derived artefacts are large and rewritten constantly. A single full-cohort run
+#    writes masks, overlays, caches and tiles (§5 of the spec: ~47 GB compressed raw,
+#    ~250 GB if anything decompresses, plus derived output on top). Syncing that
+#    saturates the upload queue, burns the user's Dropbox quota, and can dehydrate the
+#    raw data the run is currently reading.
+# 3. Dropbox "online-only" (dehydrated) files report a plausible st_size but stall or
+#    fail on read. Scratch that lives outside Dropbox can never be dehydrated mid-run.
+#    `./ihc doctor` checks the raw tree for dehydrated files precisely because raw data
+#    *does* live in Dropbox and that risk cannot be designed away there.
+# 4. The custodian tree holds the blinding key. It must be outside git (so it cannot be
+#    pushed) and outside Dropbox (so it cannot be shared by accident), on local disk
+#    with mode 700.
+#
+# Raw data stays in Dropbox deliberately: it is the shared, backed-up, read-only
+# original. The pipeline NEVER writes there (spec §2, "Raw data is read-only").
+
+schema_version: 1
+
+roots:
+
+  # ---- read-only original data -------------------------------------------------
+  # 31 .vsi index files (tubes 29-58 and 60) plus the _Image_NN_ payload folders.
+  # The pipeline opens these read-only and must never create, modify or delete here.
+  raw_root: ~/Dropbox/longevity_project/projects/Rapamycin_CSF_mice_Per/IHC_analysis_pipeline/RawData
+
+  # ---- derived artefacts: OUTSIDE Dropbox, OUTSIDE git --------------------------
+  # Everything under work_root must be regenerable from raw + code + config.
+  # Safe to delete at any time; never back it up in preference to re-running.
+  work_root: ~/ihc_work
+
+  # ---- reportable output: figures, tables, QC reports, exports ------------------
+  # Small enough to archive, large enough that it still does not belong in git.
+  results_root: "{work_root}/results"
+
+  # ---- blinding key: custodian only --------------------------------------------
+  # Created mode 700. Holds the tube_id <-> coded_id permutation and its seed, and the
+  # private provenance manifest (spec §6 step 3). Whoever trains classifiers, draws
+  # regions or annotates validation data must NOT have this directory.
+  # PENDING D-14: the custodian has not been named. Until then this tree stays empty.
+  # Inside the project folder so it syncs to Dropbox and gets backed up with
+  # everything else. It is NOT in the git repo (the repo lives at ~/ihc_pipeline),
+  # so it cannot be pushed. 
+  custodian_root: "~/Dropbox/longevity_project/projects/Rapamycin_CSF_mice_Per/IHC_analysis_pipeline/BlindingKey"
+
+  # ---- the repository itself ---------------------------------------------------
+  # Resolved at runtime from the location of the `ihc` entry command; listed here so
+  # that config keys can interpolate "{repo_root}".
+  repo_root: "{repo_root}"
+
+# ---------------------------------------------------------------------------------
+# Locations inside the raw tree. Names only — never absolute paths.
+# ---------------------------------------------------------------------------------
+raw:
+  vsi_glob: "*.vsi"                        # 31 index files at the top level
+  payload_folder_pattern: "_Image_{tube_id}_"   # sibling folder holding the pixels
+  stack_folder_glob: "stack*"              # one per series
+  fluorescence_tile_file: frame_t_0.ets    # tissue series
+  rgb_tile_file: frame_t.ets               # stack1 label, stack10000 overview
+  rescan_subdir: Rescan                    # re-acquired tubes 51 and 60
+  slide_record_xlsx: "Imaging_slide record_20260805.xlsx"   # wet-lab staining record (note the space)
+
+# ---------------------------------------------------------------------------------
+# Version-controlled configuration (small, text, reviewable in a diff).
+# ---------------------------------------------------------------------------------
+config:
+  slides_csv: "{repo_root}/config/slides.csv"        # per-slide positive box. Authoritative.
+  analysis_yaml: "{repo_root}/config/config.yaml"
+  channels_yaml: "{repo_root}/config/channels.yaml"
+  tool_versions_yaml: "{repo_root}/env/tool_versions.yaml"
+
+# ---------------------------------------------------------------------------------
+# Derived artefacts. All under work_root; all disposable.
+# ---------------------------------------------------------------------------------
+work:
+  verify_dir: "{work_root}/verify"          # verification reports + checksums
+  meta_dir: "{work_root}/meta"              # per-slide metadata sweep output
+  manifest_dir: "{work_root}/manifest"      # blinded analysis manifest
+  qc_dir: "{work_root}/qc"                  # overlays, seam crops, QC figures
+  cache_dir: "{work_root}/cache"            # decoded-tile and mask caches
+  scratch_dir: "{work_root}/scratch"        # per-task isolated temp dirs; atomic rename on success
+  logs_dir: "{work_root}/logs"
+  classifiers_dir: "{work_root}/classifiers"   # frozen QuPath classifier files + hashes
+  qupath_projects_dir: "{work_root}/qupath"    # coded tissue series only, no label image
+
+# ---------------------------------------------------------------------------------
+# Custodian-only artefacts. Mode 700. Never in git, never in Dropbox.
+# ---------------------------------------------------------------------------------
+custodian:
+  blinding_key_csv: "{custodian_root}/blinding_key.csv"
+  provenance_manifest_csv: "{custodian_root}/provenance_manifest.csv"
+
+# ---------------------------------------------------------------------------------
+# Reportable output.
+# ---------------------------------------------------------------------------------
+results:
+  tables_dir: "{results_root}/tables"
+  figures_dir: "{results_root}/figures"
+  reports_dir: "{results_root}/reports"

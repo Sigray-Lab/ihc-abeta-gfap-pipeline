@@ -1,0 +1,137 @@
+# config/channels.yaml — channel index to target mapping.
+#
+# Confirmed by metadata AND visually (spec §5):
+#   DAPI  dense nuclear texture, bright dentate and CA cell layers
+#   FITC  subpial and white-matter fibrous staining  -> GFAP
+#   Cy3   discrete punctate deposits through cortex, hippocampus, thalamus -> Abeta
+#
+# INDEX BY CHANNEL NAME, NOT BY POSITION. The order below is what every file in this
+# cohort has been observed to use, and the pipeline asserts it rather than trusting it.
+# If a file's channel names do not match `expected_order`, that is a hard failure, not
+# a reason to fall back on positional indexing.
+
+schema_version: 1
+
+match_by: name
+expected_order: [DAPI, FITC, Cy3]
+n_channels: 3
+n_focal_planes: 1        # no z-stacks: per-section focus map, in-focus plane only
+bit_depth: 16
+camera: "Hamamatsu ORCA-Fusion"
+binning: "1x1"
+objective: "Olympus 20x UPLXAPO"
+numerical_aperture: 0.80
+
+channels:
+
+  - index: 0
+    name: DAPI
+    target: nuclei
+    fluorophore: DAPI
+    # Recorded emission wavelength in the file metadata.
+    emission_nm: 455
+    # FILTER STRING: recorded by the instrument in exactly TWO of 31 files — slides 51
+    # and 60, which are precisely the two acquired at non-standard exposure. That
+    # correlation independently corroborates that those two slides were handled
+    # differently at the scope.
+    emission_filter: "DAPI 432/36"
+    emission_filter_source: instrument_metadata
+    emission_filter_files_recorded_in: 2
+    role: tissue_mask_and_exploratory_cell_count
+
+  - index: 1
+    name: FITC
+    target: GFAP
+    fluorophore: FITC
+    emission_nm: 518
+    # FILTER STRING: NOT RECORDED ANYWHERE in the cohort. Must be obtained from the
+    # imaging core before methods are written. This is a methods-section item, not a
+    # pipeline input — no computation depends on it.
+    emission_filter: UNKNOWN_ASK_IMAGING_CORE
+    emission_filter_source: none
+    emission_filter_files_recorded_in: 0
+    primary_antibody: "Dako/Agilent Z0334 (Z033429-2, rabbit polyclonal, RRID AB_10013382)"
+    endpoint: "GFAP-immunoreactive area"
+
+  - index: 2
+    name: Cy3
+    target: Abeta
+    fluorophore: Cy3
+    emission_nm: 565
+    # FILTER STRING: recorded in 29 of 31 files. Treat in-file strings as authoritative.
+    emission_filter: "Cy3 595/31"
+    emission_filter_source: instrument_metadata
+    emission_filter_files_recorded_in: 29
+    primary_antibody: "82E1 (IBL #10323, mouse IgG monoclonal, lot 2H003)"
+    # 82E1 does NOT cross-react with APP (closes that confound) but requires the free
+    # unmodified N-terminus, so it under-detects N-truncated and pyroglutamate species
+    # enriched in mature cored deposits. Citrate retrieval without formic acid pushes
+    # the same way. Non-differential across the cohort, but it is why the endpoint is
+    # named immunoreactive area rather than plaque load.
+    endpoint: "Abeta-immunoreactive area"
+    antigen_retrieval: "citrate buffer, no formic acid"
+
+# ---------------------------------------------------------------------------------
+# Excitation. LaserLED hybrid light source. Not a pipeline input — methods only.
+# ---------------------------------------------------------------------------------
+excitation:
+  source: "Excelitas X-Cite NOVEM (LaserLED hybrid)"
+  lines_nm: [405, 485, 551, 584, 639, 730]
+  source_of_record: "instrument documentation supplied with the task brief"
+  # DISCREPANCY, UNRESOLVED. CLAUDE_v1.2.md §5 quotes the KI BIC facility document as
+  # listing the excitation LEDs as 385, 430, 475, 545, 635 and 735 nm. Those are not
+  # the same lines. One of the two documents describes a different unit or a different
+  # configuration. Confirm with the imaging core before writing methods; do not quote
+  # either set until then.
+  conflicting_facility_document_lines_nm: [385, 430, 475, 545, 635, 735]
+  conflict_status: unresolved_ask_imaging_core
+
+# ---------------------------------------------------------------------------------
+# A channel table supplied by the wet lab (DAPI 440+/-40, FITC 521+/-21, Cy3 607+/-34)
+# does NOT match the recorded in-file values and appears to be a generic VS200 spec
+# rather than this instrument's configuration. It was flagged as unverified by its
+# author. Recorded here so nobody re-discovers it and mistakes it for data.
+# ---------------------------------------------------------------------------------
+rejected_wet_lab_channel_table:
+  DAPI: "440 +/- 40"
+  FITC: "521 +/- 21"
+  Cy3: "607 +/- 34"
+  status: rejected_generic_vs200_spec_not_this_instrument
+
+# ---------------------------------------------------------------------------------
+# Exposure. Autoexposure was OFF and lamp intensities identical, so these were manual
+# settings. Values in MICROseconds, matching VSI tag 100002. Verified across all 31
+# index files and validated against Bio-Formats on the 8 animals with payloads (8/8).
+# Every animal has exactly 3 records per tissue series and all triplets within an
+# animal are identical.
+# ---------------------------------------------------------------------------------
+exposure_us:
+  standard:                 # 29 of 31 slides
+    DAPI: 128547
+    FITC: 397927
+    Cy3: 1839999
+  deviations:
+    51:                     # rescanned; see Rescan/ and D-1
+      DAPI: 60517
+      FITC: 240822
+      Cy3: 145677
+    60:                     # rescanned; Cy3 only
+      DAPI: 128547
+      FITC: 397927
+      Cy3: 397927
+  # Assert per animal at ingest: N identical triplets where N = number of tissue
+  # series. Never collapse to a set — that cannot distinguish "a value is missing"
+  # from "two channels share a value", which is how the first sweep went wrong.
+  assert_identical_triplets_per_animal: true
+  rescanned_tubes: [51, 60]
+
+# ---------------------------------------------------------------------------------
+# What this panel cannot do. Recorded so it is not rediscovered as a surprise.
+# ---------------------------------------------------------------------------------
+panel_limitations:
+  - "No beta-sheet dye: cored vs diffuse deposits cannot be validated."
+  - "No cell-type marker (no Iba1, no NeuN): intracellular Abeta cannot be attributed
+     to a cell type. Microglia and astrocytes both internalise Abeta."
+  - "No single-stain preparations for this cohort, so spectral bleed-through was
+     assessed from the cohort data by distance profiling rather than directly
+     (decision of 31 July, accepted). See gfap_enrichment in config.yaml."

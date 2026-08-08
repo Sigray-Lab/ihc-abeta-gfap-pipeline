@@ -1,0 +1,196 @@
+# Drawing the brain regions — a step-by-step guide
+
+You do not need to have used QuPath before, and you do not need to know
+anything about the code. This is the whole job.
+
+**What you are doing:** on each picture of a brain section, draw an outline around the
+hippocampus and an outline around the cortex. That is it. The computer measures what is
+inside your outlines afterwards.
+
+**How long it takes:** about 5–15 minutes per section once you are used to it. There
+are a few dozen sections. Do them in batches; there is no rush and no deadline inside a
+single sitting.
+
+---
+
+## 1. Open the project
+
+**The easy way:** double-click **`Open QuPath project.command`** in the project folder.
+QuPath opens with the project already loaded. The first launch takes 10–20 seconds and
+leaves a small black terminal window behind, which you can close.
+
+**If that does not work:** open QuPath yourself, then **File → Project… → Open Project**,
+and pick `project.qpproj` inside `ihc_work/qupath/qupath/`.
+
+Either way, a list of images appears in the panel on the left. Each is named something
+like **`K07_s01`** — a code, not a mouse number. Double-click the first to open it.
+
+If QuPath asks you to "set image type", something has gone wrong — close it without
+saving and tell the person who set this up. It should already be set.
+
+---
+
+## 2. What you are looking at
+
+The picture will be **blue-grey, showing cell nuclei only**. It will look like a plain
+outline of the brain with brighter bands where cells are packed tightly together — the
+dentate gyrus and the CA layers of the hippocampus stand out clearly, which is exactly
+what you need to find the boundaries.
+
+**The green and red channels are switched off on purpose.** You are not missing
+anything and nothing is broken.
+
+The reason matters, so here it is plainly. If you can see the plaques and the GFAP while
+you are drawing, your hand drifts. Not deliberately — nobody does it deliberately — but
+an edge gets nudged a little to take in an interesting patch, or a little away from an
+empty one, and it happens more in some sections than others. Since the number we
+finally report is "how much signal, divided by how much area you outlined", moving the
+edge changes the answer. Drawing on nuclei only makes that impossible. The outline ends
+up where the anatomy is, not where the signal is.
+
+The image names are codes. `K07_s01` means "animal K07, section 01". **The code is not
+the tube number** and there is no pattern connecting them, so you cannot work out which
+mouse it is, and you should not try (see section 7).
+
+---
+
+## 3. Draw the two regions
+
+You do this twice per image: once for hippocampus, once for cortex.
+
+**Set up the classes once, the first time only:**
+
+1. In the **Annotations** tab on the left, find the class list.
+2. Click the **`...`** (or the cog) → **Add/Remove…** → **Add class**.
+3. Add exactly these two, spelled exactly like this:
+   - `Hippocampus`
+   - `Isocortex`
+
+Spelling matters — the software matches on these names. Capital H, capital I, no spaces.
+
+**Then, for each image:**
+
+1. Choose the **Polygon** tool from the toolbar (the icon that looks like a shape made
+   of straight edges). The **Brush** tool also works if you prefer painting; either is
+   fine.
+2. Click your way around the hippocampus, one click per corner. Double-click to close
+   the shape. You do not need hundreds of points — follow the boundary, and use more
+   points where it curves tightly.
+3. With the new shape still selected, click **`Hippocampus`** in the class list, then
+   the **Set class** button. The outline changes colour.
+4. Do the same for the cortex, and set its class to **`Isocortex`**.
+
+**How accurate does it need to be?** Follow the anatomical boundary as you see it. A
+point every so often along a smooth edge is fine; do not agonise over single pixels. Be
+**consistent** rather than perfect — the same judgement applied the same way to every
+section is worth far more than heroic precision on a few.
+
+**Where the boundaries go:**
+
+- **Hippocampus** — the whole hippocampal formation: the curved dentate gyrus plus the
+  CA layers wrapping around it. Follow the outside of the cell layers and the tissue
+  boundary. Do not include the thalamus below it, and do not include the cortex above it.
+- **Isocortex** — the full thickness of cortex at this level, from the outer surface of
+  the brain (the pia) down to the white matter, but **not including** the white matter
+  itself. Stop where the cortical layers stop.
+- **One hemisphere only.** These sections are single hemisphere. If a second, partial
+  piece of tissue is present, leave it alone.
+- If part of a region runs off the edge of the picture, outline the part that is there.
+  Do not guess where the missing part would have been.
+
+**If you are unsure where a boundary is:** draw your best judgement and add a note (see
+section 5). Do not skip the section, and do not open the other channels to help you
+decide.
+
+---
+
+## 4. Save
+
+Press **Ctrl+S** (Windows) or **Cmd+S** (Mac) before you move to the next image. Or use
+**File → Save**.
+
+QuPath does not save automatically. If you close an image without saving, the outlines
+are gone.
+
+When you finish a session, that is all — there is nothing to export and nothing to send.
+the person who set this up reads the project directly.
+
+---
+
+## 5. If a section looks damaged
+
+Some sections have folds, tears, holes, bubbles, or areas that are out of focus. This is
+normal and expected. **Do not throw the section away and do not try to fix it.**
+
+Do this instead:
+
+- **Small damage inside a region** (a fold, a tear, a bubble): draw the region outline
+  normally, right around the outside as usual. Then draw a second shape *around the
+  damaged part* and give it the class **`Artefact`** (add that class the same way you
+  added the other two). The software subtracts it.
+- **A region is more than roughly half destroyed**: outline what is genuinely there,
+  and add a note.
+- **The whole section is unusable**: do not draw anything. Add a note.
+
+**To add a note:** in the image list on the left, right-click the image → **Edit
+description** (or use the Description box), and write in plain words what is wrong —
+"big fold across the hippocampus", "out of focus lower half", "section torn, cortex
+missing on the left". Then save.
+
+Those notes are genuinely used. A section you flagged and drew is far more useful than a
+section quietly skipped, because we can decide later what to do with it — but only if we
+know.
+
+If something looks wrong in a way this section does not cover, write the note and ask.
+Asking is always the right call. Nothing here is urgent enough to guess about.
+
+---
+
+## 6. What NOT to do
+
+**Do not turn the other channels on.** Not to "just check", not to help find a boundary,
+not out of curiosity. If you see the plaques while drawing, the outlines are influenced
+by them and the measurements made inside those outlines can no longer be trusted — and
+there is no way to undo it or to detect it afterwards. This is the single thing on this
+page that would actually damage the study. If you turn them on by accident, do not panic:
+close the image **without saving**, reopen it, and carry on.
+
+**Do not rename the images.** The names are the only link between an outline and the
+mouse it came from. A renamed image is an outline that belongs to nobody.
+
+**Do not try to work out which mouse you are looking at.** Not from the code, not from
+the file location, not from the metadata panel, not by counting sections, not by
+comparing with your bench notes. You did the staining and the imaging, so you *could*
+work it out from a tube number — which is exactly why the projects carry codes and no
+tube numbers, why the slide label picture (with the printed number and the barcode) is
+not in the project, and why the images are not in scanning order.
+
+One honest caveat: the original tube number is still buried inside the raw image files
+themselves, and QuPath can show it if you go digging through the full metadata viewer.
+We cannot strip it without re-encoding every image. So this last one is a request rather
+than a lock: **do not go looking.** If you see one by accident, say so — it is not a
+disaster, it just needs recording.
+
+**Do not add other classes**, and do not delete or move images in and out of the project.
+
+**Do not edit outlines after you have gone on to the next image and come back**, unless
+something is clearly wrong. Redrawing a region later, with a fresher eye, quietly makes
+that section different from the others.
+
+---
+
+## 7. Quick reference
+
+| | |
+|---|---|
+| Open | File → Project… → Open Project → `project.qpproj` |
+| Draw | Polygon tool, click round the edge, double-click to finish |
+| Label | Select the shape → click the class → **Set class** |
+| Classes | `Hippocampus`, `Isocortex`, and `Artefact` for damage |
+| Save | Ctrl+S / Cmd+S, **every image, before moving on** |
+| Damaged | Draw what is there, mark damage as `Artefact`, write a note |
+| Never | turn on the green/red channels · rename images · identify the mouse |
+
+Anything unclear, anything that looks odd, anything not covered here: ask the person who set this up before
+carrying on. There is no such thing as a silly question about this, and a wrong guess
+here is expensive to find later.

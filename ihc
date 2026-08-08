@@ -1,0 +1,809 @@
+#!/usr/bin/env python3
+"""ihc — the single entry command for the IHC analysis pipeline.
+
+    ./ihc doctor          environment, paths, and dehydrated-file check
+    ./ihc check-config    parse the YAML, validate slides.csv, list open decisions
+    ./ihc verify          structural verification of the raw VSI/ETS containers
+    ./ihc meta            metadata sweep over the .vsi index files
+    ./ihc manifest        build the section manifest: one row per tissue section
+    ./ihc blind           split the manifest into a private and a blinded one
+
+Six subcommands. Keep it that way. Anything that is not one of these six is a
+script under scripts/ or a function in src/ihc/, not a new verb here. `blind` earns
+its place because it is a gate rather than a step: it is the point after which
+nobody downstream may see a tube ID, it must be run exactly once, and it writes the
+only artefact in the project that cannot be regenerated from raw + code + config.
+Burying that in scripts/ would make it look optional. `manifest` earns its place
+because it is a named build stage that every later stage reads, and because it is
+where `condition` — the one column whose corruption produces silently wrong science
+— is derived. See ADR-0013.
+
+Every subcommand prints what it is about to do and where it will write before it
+does anything. Exit codes: 0 ok, 1 problems found, 2 usage error, 3 a module this
+subcommand depends on is not implemented yet.
+"""
+import argparse
+import importlib
+import json
+import os
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent
+sys.path.insert(0, str(REPO / "src"))       # no installation step, on purpose
+
+from ihc.util.config import (PENDING, load_channels, load_config,   # noqa: E402
+                             load_paths, pending_items, unapproved_items)
+
+REQUIRED_MODULES = ["numpy", "scipy", "skimage", "imagecodecs", "pandas", "yaml"]
+OPTIONAL_MODULES = ["tifffile", "cv2", "pytest"]
+
+
+# --------------------------------------------------------------------------------
+# helpers
+# --------------------------------------------------------------------------------
+def banner(title, plan, writes):
+    print(f"\n=== ihc {title} ===")
+    print(f"  what : {plan}")
+    print(f"  reads: {REPO / 'config'}")
+    print(f"  writes: {writes}\n", flush=True)
+
+
+def ok(msg):
+    print(f"  ok    {msg}")
+
+
+def warn(msg):
+    print(f"  WARN  {msg}")
+
+
+def fail(msg):
+    print(f"  FAIL  {msg}")
+
+
+def is_dehydrated(path, ratio_threshold=0.5):
+    """True if the file looks like a Dropbox online-only placeholder.
+
+    A dehydrated file reports a plausible st_size but has ~0 allocated blocks, and
+    reading it stalls or fails. Files under 4 KiB are skipped: block granularity
+    makes the ratio meaningless there.
+    """
+    st = path.stat()
+    if st.st_size < 4096:
+        return False
+    return (st.st_blocks * 512) / st.st_size < ratio_threshold
+
+
+def resolve(module_names, attr):
+    """Import `attr` from the first module in `module_names` that provides it."""
+    tried = []
+    for name in module_names:
+        try:
+            mod = importlib.import_module(name)
+        except ImportError as exc:
+            tried.append(f"{name} ({exc})")
+            continue
+        if hasattr(mod, attr):
+            return getattr(mod, attr)
+        tried.append(f"{name} (no attribute {attr!r})")
+    print(f"  FAIL  {attr}() is not available yet. Tried:")
+    for t in tried:
+        print(f"          {t}")
+    print("        That module is owned by the ingest agent and is not written yet.")
+    return None
+
+
+# --------------------------------------------------------------------------------
+# doctor
+# --------------------------------------------------------------------------------
+def cmd_doctor(args):
+    paths = load_paths()
+    banner("doctor",
+           "check interpreter, packages, configured paths, and scan the raw tree for "
+           "Dropbox online-only (dehydrated) files",
+           "nothing — doctor is read-only")
+    problems = 0
+
+    print("  -- interpreter --")
+    ok(f"python {sys.version.split()[0]} at {sys.executable}")
+    if sys.version_info[:2] != (3, 11):
+        warn(f"env/environment.yml pins python 3.11, this is {sys.version_info[0]}.{sys.version_info[1]}")
+
+    print("  -- packages --")
+    for name in REQUIRED_MODULES:
+        try:
+            mod = importlib.import_module(name)
+            ok(f"{name} {getattr(mod, '__version__', '?')}")
+        except ImportError:
+            fail(f"{name} missing (required)")
+            problems += 1
+    for name in OPTIONAL_MODULES:
+        try:
+            mod = importlib.import_module(name)
+            ok(f"{name} {getattr(mod, '__version__', '?')} (optional)")
+        except ImportError:
+            warn(f"{name} missing (optional)")
+
+    print("  -- paths --")
+    raw_root = paths["raw_root"]
+    if raw_root.is_dir():
+        ok(f"raw_root {raw_root}")
+    else:
+        fail(f"raw_root does not exist: {raw_root}")
+        problems += 1
+    for key in ("work_root", "results_root", "custodian_root"):
+        p = paths[key]
+        if p.exists():
+            ok(f"{key} {p}")
+            continue
+        anchor = p                      # nearest ancestor that exists
+        while not anchor.exists() and anchor != anchor.parent:
+            anchor = anchor.parent
+        if os.access(anchor, os.W_OK):
+            warn(f"{key} does not exist yet, will be created under {anchor}: {p}")
+        else:
+            fail(f"{key} missing and {anchor} is not writable: {p}")
+            problems += 1
+    # work_root and results_root must stay out of Dropbox: they are high-churn and would
+    # trigger constant re-upload and conflicted copies mid-run. custodian_root is the
+    # opposite case — it is a few kB written once, and syncing it is how it gets backed up.
+    for key in ("work_root", "results_root"):
+        if "Dropbox" in str(paths[key]):
+            fail(f"{key} is inside Dropbox: {paths[key]} — see the comment in config/paths.yaml")
+            problems += 1
+    cust = paths["custodian_root"]
+    if cust.exists():
+        ok(f"custodian_root {cust}")
+    slides = paths["config.slides_csv"]
+    (ok if slides.exists() else fail)(f"slides.csv {slides}")
+    problems += 0 if slides.exists() else 1
+
+    print("  -- raw data inventory --")
+    if not raw_root.is_dir():
+        print("        skipped, raw_root is missing")
+        return 1
+    vsi = sorted(raw_root.glob(paths["raw"]["vsi_glob"]))
+    expected = load_config()["qc"]["expected_vsi_count"]
+    (ok if len(vsi) == expected else warn)(f"{len(vsi)} .vsi index files (expected {expected})")
+    payloads = sorted(raw_root.glob("_Image_*_"))
+    ok(f"{len(payloads)} payload folders present "
+       f"({len(vsi) - len(payloads)} animals are index-only, so pixels are unavailable for them)")
+    rescan = raw_root / paths["raw"]["rescan_subdir"]
+    if rescan.is_dir():
+        rescan_vsi = sorted(rescan.glob(paths["raw"]["vsi_glob"]))
+        rescan_payloads = sorted(rescan.glob("_Image_*_"))
+        ok(f"{rescan.name}/: {len(rescan_vsi)} re-acquired .vsi, "
+           f"{len(rescan_payloads)} payload folders (tubes 51 and 60, standard exposure)")
+        vsi += rescan_vsi
+        payloads += rescan_payloads
+    else:
+        warn(f"no {paths['raw']['rescan_subdir']}/ directory — tubes 51 and 60 were "
+             f"acquired at non-standard exposure and should be rescanned (D-1)")
+    for slide_record in (raw_root / paths["raw"]["slide_record_xlsx"],):
+        (ok if slide_record.exists() else warn)(f"wet-lab record {slide_record.name}")
+
+    print("  -- dehydrated-file check (Dropbox online-only) --")
+    print("        a dehydrated file reports a plausible size but stalls on read;")
+    print("        detected by comparing allocated blocks against st_size.")
+    checked = ghosts = 0
+    targets = list(vsi) + [p for d in payloads for p in d.rglob("*.ets")]
+    for p in targets:
+        try:
+            checked += 1
+            if is_dehydrated(p):
+                ghosts += 1
+                if ghosts <= 10:
+                    fail(f"dehydrated: {p.relative_to(raw_root)}")
+        except OSError as exc:
+            fail(f"cannot stat {p}: {exc}")
+            problems += 1
+    if ghosts:
+        fail(f"{ghosts} of {checked} raw files are online-only. Materialise them first: "
+             f"right-click the folder in Finder and choose 'Make Available Offline', "
+             f"then re-run ./ihc doctor. Do NOT start a run in this state.")
+        problems += 1
+    else:
+        ok(f"{checked} raw files are materialised on local disk")
+
+    print("  -- open decisions --")
+    n_pending = len(pending_items(load_config()))
+    (ok if n_pending == 0 else warn)(f"{n_pending} config values still {PENDING} "
+                                     f"(./ihc check-config lists them)")
+
+    print(f"\n  {'PROBLEMS: ' + str(problems) if problems else 'doctor: all checks passed'}")
+    return 1 if problems else 0
+
+
+# --------------------------------------------------------------------------------
+# check-config
+# --------------------------------------------------------------------------------
+def cmd_check_config(args):
+    banner("check-config",
+           "parse paths.yaml / config.yaml / channels.yaml, validate slides.csv, and "
+           "list every decision still open",
+           "nothing — check-config is read-only")
+    problems = 0
+
+    for name, loader in (("paths.yaml", load_paths), ("config.yaml", load_config),
+                         ("channels.yaml", load_channels)):
+        try:
+            loader()
+            ok(f"{name} parses")
+        except Exception as exc:                       # noqa: BLE001 — report, don't crash
+            fail(f"{name}: {type(exc).__name__}: {exc}")
+            problems += 1
+    if problems:
+        return 1
+
+    cfg, chans = load_config(), load_channels()
+
+    print("  -- channels --")
+    order = [c["name"] for c in chans["channels"]]
+    if order == chans["expected_order"]:
+        ok(f"channel order {order} -> {[c['target'] for c in chans['channels']]}")
+    else:
+        fail(f"channel order {order} != expected_order {chans['expected_order']}")
+        problems += 1
+
+    print("  -- slides.csv --")
+    sys.path.insert(0, str(REPO / "config"))
+    from validate_config import validate_slides                      # noqa: PLC0415
+    slides = load_paths()["config.slides_csv"]
+    if not slides.exists():
+        fail(f"missing: {slides}")
+        problems += 1
+    else:
+        errors, warnings = validate_slides(slides)
+        for w in warnings:
+            warn(w)
+        for e in errors:
+            fail(e)
+        problems += len(errors)
+        if not errors:
+            ok(f"{slides.name} passes structural validation")
+
+    print("  -- decisions still open (a stage that needs one of these must refuse to run) --")
+    pend = pending_items(cfg)
+    for key in pend:
+        print(f"  PEND  {key}")
+    unapproved = unapproved_items(cfg)
+    for key in unapproved:
+        print(f"  UNAPP {key}  (recommended value present, PI sign-off missing)")
+
+    print(f"\n  {len(pend)} pending value(s), {len(unapproved)} unapproved block(s), "
+          f"{problems} problem(s)")
+    print("  Pending values are the string PENDING_PI_DECISION: any stage that uses one")
+    print("  arithmetically raises TypeError rather than running on a silent default.")
+    print("  See docs/decisions.md for who owns each one.")
+    return 1 if problems else 0
+
+
+# --------------------------------------------------------------------------------
+# verify
+# --------------------------------------------------------------------------------
+def cmd_verify(args):
+    paths = load_paths()
+    out = paths["work.verify_dir"]
+    banner("verify",
+           "parse every SIS/ETS container without Java, check the companion payload "
+           "folder is present, that tile tables are internally consistent, that no "
+           "tile offset runs past end of file, and report the sparse-tile fraction; "
+           "hash the .vsi and every companion .ets",
+           out)
+    verify_directory = resolve(["ihc.qc.verify", "ihc.ingest.verify"], "verify_directory")
+    if verify_directory is None:
+        return 3
+    render = resolve(["ihc.qc.verify", "ihc.ingest.verify"], "format_directory_report")
+    out.mkdir(parents=True, exist_ok=True)
+
+    # RawData/ and RawData/Rescan/ are separate sweeps: subfolders are not searched,
+    # and the rescans of tubes 51 and 60 carry 2 tissue series each, not 3 or 4.
+    sweeps = [("raw", paths["raw_root"], tuple(load_config()["qc"]["expected_tissue_series_per_slide"]))]
+    rescan = paths["raw_root"] / paths["raw"]["rescan_subdir"]
+    if rescan.is_dir():
+        sweeps.append(("rescan", rescan, (2,)))
+
+    failed = 0
+    for name, directory, expect in sweeps:
+        print(f"  -- {name}: {directory} (expecting {expect} tissue series per slide) --")
+        summary = verify_directory(str(directory), expect_sections=expect, progress=True)
+        report = out / f"verify_{name}.json"
+        report.write_text(json.dumps(summary, indent=2, default=str))
+        if render is not None:
+            (out / f"verify_{name}.txt").write_text(render(summary))
+        print(f"  {summary['n_passed']} of {summary['n_datasets']} dataset(s) passed "
+              f"-> {report}")
+        for problem in summary.get("problems", []):
+            fail(problem)
+        bad = [d for d in summary.get("datasets", []) if not d.get("ok")]
+        for dataset in bad[:5]:
+            fail(f"{dataset.get('dataset')}: " +
+                 "; ".join(str(p).split(". ")[0] for p in dataset.get("problems", [])[:2]))
+        if len(bad) > 5:
+            print(f"  FAIL  ... and {len(bad) - 5} more: "
+                  f"{', '.join(str(d.get('dataset')) for d in bad[5:])}")
+            print(f"        full detail in {report.with_suffix('.txt')}")
+        failed += summary["n_failed"] + len(summary.get("problems", []))
+
+    print(f"\n  verify complete -> {out}")
+    return 1 if failed else 0
+
+
+# --------------------------------------------------------------------------------
+# meta
+# --------------------------------------------------------------------------------
+def cmd_meta(args):
+    paths = load_paths()
+    out = paths["work.meta_dir"]
+    banner("meta",
+           "read series names, exposures, stage origins, pixel sizes and timestamps "
+           "from each .vsi INDEX (works without the payload, which Bio-Formats cannot "
+           "do), then derive PAP-pen box membership by splitting the sections at the "
+           "largest stage-X gap",
+           out)
+    read_vsi_meta = resolve(["ihc.ingest.vsi_meta"], "read_vsi_meta")
+    assign_boxes = resolve(["ihc.ingest.vsi_meta"], "assign_boxes")
+    if read_vsi_meta is None or assign_boxes is None:
+        return 3
+    out.mkdir(parents=True, exist_ok=True)
+    vsi_files = sorted(paths["raw_root"].glob(paths["raw"]["vsi_glob"]))
+    print(f"  {len(vsi_files)} index files to sweep")
+
+    rows, failures = [], 0
+    print(f"\n  {'tube':>5} {'nsec':>5} {'near_label':>12} {'far_label':>12} {'ratio':>6} {'Cy3 ms':>9}")
+    for path in vsi_files:
+        try:
+            meta = read_vsi_meta(path)
+            boxes = assign_boxes(meta.series)          # takes the series LIST, not the VsiMeta
+        except Exception as exc:                       # noqa: BLE001 — one bad file must not stop the sweep
+            fail(f"{path.name}: {type(exc).__name__}: {exc}")
+            failures += 1
+            continue
+        near = ",".join(boxes["near_label"])
+        far = ",".join(boxes["far_label"])
+        cy3 = meta.series[0].exposure_ms.get("Cy3") if meta.series else None
+        cy3_s = "?" if cy3 is None else f"{cy3:.2f}"
+        print(f"  {str(meta.tube_id):>5} {meta.n_tissue_series:>5} {near:>12} {far:>12} "
+              f"{boxes['gap_ratio']:>6.2f} {cy3_s:>9}")
+        for s in meta.series:
+            rows.append({
+                "tube_id": meta.tube_id,
+                "tube_id_in_file": meta.tube_id_in_file,
+                "section_label": s.section_label,
+                "series_name": s.name,
+                "box": "near_label" if s.section_label in boxes["near_label"] else "far_label",
+                "stage_x_um": round(s.stage_x_um, 3),
+                "stage_y_um": round(s.stage_y_um, 3),
+                "gap_ratio": round(boxes["gap_ratio"], 3),
+                "split_gap_mm": round(boxes["split_gap_mm"], 3),
+                "pixel_size_um": s.pixel_size_um,
+                "width_px": s.width_px,
+                "height_px": s.height_px,
+                "exposure_DAPI_ms": s.exposure_ms.get("DAPI"),
+                "exposure_FITC_ms": s.exposure_ms.get("FITC"),
+                "exposure_Cy3_ms": s.exposure_ms.get("Cy3"),
+                "warnings": "; ".join(meta.warnings),
+            })
+
+    if rows:
+        import csv as _csv
+        csv_path = out / "series_metadata.csv"
+        with open(csv_path, "w", newline="") as fh:
+            w = _csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
+            w.writeheader()
+            w.writerows(rows)
+        (out / "series_metadata.json").write_text(json.dumps(rows, indent=2))
+        print(f"\n  wrote {len(rows)} series rows")
+        print(f"    {csv_path}")
+        print(f"    {out / 'series_metadata.json'}")
+
+    print(f"\n  {len({r['tube_id'] for r in rows})} slides swept, {failures} failed")
+    return 1 if failures else 0
+
+
+# --------------------------------------------------------------------------------
+# manifest
+# --------------------------------------------------------------------------------
+def cmd_manifest(args):
+    paths = load_paths()
+    out = Path(args.out).expanduser() if args.out else paths["work.manifest_dir"]
+    banner("manifest",
+           "join the wet-lab staining record (config/slides.csv) to the .vsi metadata "
+           "and emit one row per tissue section, deriving PAP-pen box membership from "
+           "stage X and the positive/negative CONDITION from the record — never from "
+           "the pixels. Rows whose condition cannot be resolved are reported and kept "
+           "out of the analysis manifest",
+           out)
+
+    build_manifest = resolve(["ihc.ingest.manifest"], "build_manifest")
+    write_manifest = resolve(["ihc.ingest.manifest"], "write_manifest")
+    validate_manifest = resolve(["ihc.ingest.manifest"], "validate_manifest")
+    format_slide_summary = resolve(["ihc.ingest.manifest"], "format_slide_summary")
+    if None in (build_manifest, write_manifest, validate_manifest, format_slide_summary):
+        return 3
+
+    try:
+        df = build_manifest(include_rescans=not args.no_rescans)
+        apply_notes = resolve(["ihc.ingest.manifest"], "apply_section_notes")
+        if apply_notes is not None:
+            df = apply_notes(df)
+        finalise = resolve(["ihc.ingest.manifest"], "finalise_scan_preference")
+        if finalise is not None:
+            df = finalise(df)
+    except Exception as exc:                       # noqa: BLE001 — report, don't traceback
+        fail(f"{type(exc).__name__}: {exc}")
+        return 1
+
+    sections = df[df["row_kind"] == "section"]
+    counts = sections["condition"].value_counts().to_dict()
+    ok(f"{len(df)} row(s): {len(sections)} section(s) over "
+       f"{sections['tube_id'].nunique()} animal(s), "
+       f"{len(sections[sections['scan'] == 'rescan'])} of them rescans")
+    ok(f"condition: {counts.get('positive', 0)} positive, "
+       f"{counts.get('negative', 0)} negative, {counts.get('unresolved', 0)} UNRESOLVED")
+    with_pixels = int(sections["payload_present"].fillna(False).sum())
+    ok(f"{with_pixels} section(s) have pixels on disk; {len(sections) - with_pixels} are "
+       f"index-only (metadata known, payload not transferred — a normal state)")
+    no_control = sorted(
+        int(t) for t in
+        sections.loc[sections["has_negative_control"] == False, "tube_id"]  # noqa: E712
+        .dropna().unique())
+    if no_control:
+        warn(f"no negative control at all for tube(s) {no_control} — both boxes were "
+             f"stained. The negative-control gate is defined per "
+             f"animal-where-negatives-exist (D-10) and needs a rule for these.")
+    two_scans = sorted(
+        int(t) for t in
+        sections.loc[sections["scan"] == "rescan", "tube_id"].dropna().unique())
+    if two_scans:
+        warn(f"tube(s) {two_scans} appear TWICE, as an original and a rescan. "
+             f"(tube_id, section_label) is therefore NOT a key — the rescan renumbers "
+             f"its sections 01/02 and on these far_label slides they carry the "
+             f"OPPOSITE condition to the original's 01/02. Key on "
+             f"(tube_id, scan, section_label); pair the two scans of one section on "
+             f"(tube_id, physical_section_label); and filter to scan_is_preferred "
+             f"before aggregating or blinding.")
+
+    print("\n  -- per slide --")
+    for line in format_slide_summary(df).splitlines():
+        print(f"  {line}")
+
+    print("\n  -- problems --")
+    problems = validate_manifest(df)
+    for problem in problems:
+        fail(problem)
+    if not problems:
+        ok("no problems")
+
+    out.mkdir(parents=True, exist_ok=True)
+    written = write_manifest(df, out)
+    print("\n  wrote")
+    for key in ("manifest_csv", "manifest_json", "analysis_csv", "problems_txt"):
+        print(f"    {written[key]}")
+    print(f"  manifest_analysis.csv holds "
+          f"{int(df['analysis_include'].fillna(False).sum())} of {len(df)} row(s); "
+          f"unresolved slides are absent from it by construction.")
+
+    if args.crosscheck:
+        crosscheck = resolve(["ihc.ingest.manifest"],
+                             "crosscheck_condition_against_pixels")
+        render = resolve(["ihc.ingest.manifest"], "format_crosscheck")
+        if crosscheck is None or render is None:
+            return 3
+        print("\n  -- AUDITOR: image evidence vs the record --")
+        print("     This NEVER writes to `condition`. Records are truth; pixels audit.")
+        print("     A contradiction blocks and is resolved at the bench (ADR-0003).")
+        report = crosscheck(df, level=args.level, max_slides=args.max_slides)
+        for line in render(report).splitlines():
+            print(f"  {line}")
+        if not report.empty:
+            report_path = out / "manifest_crosscheck.csv"
+            report.to_csv(report_path, index=False)
+            print(f"\n    {report_path}")
+            problems += [
+                f"tube {row.tube_id} {row.scan} section _{row.section_label}: the pixels "
+                f"say {row.pixel_condition} but slides.csv says "
+                f"{row.condition_from_record}. BLOCKING — confirm at the bench."
+                for row in report[report["agreement"] == "CONTRADICTS"].itertuples()
+            ]
+
+    print(f"\n  manifest: {len(problems)} problem(s)")
+    return 1 if problems else 0
+
+
+# --------------------------------------------------------------------------------
+# blind
+# --------------------------------------------------------------------------------
+def _load_manifest(args, paths):
+    """The analysis manifest, from --manifest, from work/manifest/, or from the module.
+
+    Returns (dataframe, source_description) or (None, None) if it cannot be found.
+    """
+    import pandas as pd                                        # noqa: PLC0415
+
+    def read(path):
+        # section_label is the zero-padded string "01".."04". Left to itself pandas
+        # reads it as the integer 1, which silently breaks every join against a series
+        # name and is invisible in the output.
+        frame = pd.read_csv(path, dtype=str, keep_default_na=False, na_values=[""])
+        for column in frame.columns:
+            if column == "section_label":
+                continue
+            converted = pd.to_numeric(frame[column], errors="coerce")
+            if converted.notna().equals(frame[column].notna()) and converted.notna().any():
+                frame[column] = converted
+            elif (frame[column].notna().any()
+                  and set(frame[column].dropna().unique()) <= {"True", "False"}):
+                frame[column] = frame[column] == "True"
+        return frame
+
+    if args.manifest:
+        path = Path(args.manifest).expanduser()
+        if not path.exists():
+            fail(f"no such manifest: {path}")
+            return None, None
+        return read(path), str(path)
+
+    manifest_dir = paths["work.manifest_dir"]
+    # The ANALYSIS manifest first: `./ihc manifest` has already kept unresolved slides
+    # out of it. `manifest.csv` is the full record and still contains tube 37, so
+    # blinding it is refused -- correctly, but that is a confusing thing to default to.
+    # Read the FULL manifest, not the analysis subset. The private provenance file is
+    # the archival record of everything imaged -- including sections deliberately
+    # excluded at the bench (tube 49's out-of-focus rescan) -- and calling it a master
+    # document while it silently drops rows would be false. split_manifest applies the
+    # measurement filter to the BLINDED side only.
+    for name in ("manifest.csv", "manifest_analysis.csv", "analysis_manifest.csv",
+                 "manifest.csv", "sections.csv"):
+        candidate = manifest_dir / name
+        if candidate.exists():
+            return read(candidate), str(candidate)
+
+    build_manifest = resolve(["ihc.ingest.manifest"], "build_manifest")
+    if build_manifest is None:
+        print(f"        no manifest CSV under {manifest_dir} either, and no "
+              f"--manifest was given.")
+        return None, None
+    frame = build_manifest()
+    source = "ihc.ingest.manifest.build_manifest()"
+    if "analysis_include" in frame.columns:
+        frame = frame[frame["analysis_include"].fillna(False).astype(bool)]
+        source += "  (filtered to analysis_include)"
+    if "row_kind" in frame.columns:
+        frame = frame[frame["row_kind"] == "section"]
+        source += "  (sections only)"
+    return frame.reset_index(drop=True), source
+
+
+def cmd_blind(args):
+    paths = load_paths()
+    custodian = Path(args.custodian_dir).expanduser() if args.custodian_dir else paths["custodian_root"]
+    work = Path(args.work_dir).expanduser() if args.work_dir else paths["work.manifest_dir"]
+    banner("blind",
+           "give every animal a random code, and split the manifest into a private "
+           "one (codes, tube IDs, groups, seed) and a blinded one (codes only)",
+           f"{custodian}  (key, mode 0700)  and  {work}  (blinded manifest)")
+
+    try:
+        from ihc.ingest import blinding                        # noqa: PLC0415
+    except ImportError as exc:
+        fail(f"cannot import ihc.ingest.blinding: {exc}")
+        return 3
+
+    df, source = _load_manifest(args, paths)
+    if df is None:
+        return 3
+    tube_column = "tube_id" if "tube_id" in df.columns else None
+    if tube_column is None:
+        fail(f"manifest has no tube_id column: {source}")
+        return 1
+    tubes = sorted({int(t) for t in df[tube_column].dropna()})
+    ok(f"manifest: {len(df)} row(s), {len(tubes)} animal(s)  <- {source}")
+
+    cfg_seed = load_config().get("blinding", {}).get("seed")
+    if cfg_seed not in (None, PENDING) and str(cfg_seed) != str(args.seed):
+        warn(f"config/config.yaml records blinding.seed={cfg_seed!r}, which is not the "
+             f"--seed you passed. The key is defined by the seed actually used.")
+
+    print("  -- codes --")
+    try:
+        # If a key already exists, EXTEND it rather than redraw. Codes already issued
+        # are kept verbatim; only animals not in it draw fresh labels. Without this a
+        # single late-arriving or dropped animal reshuffles almost the whole cohort
+        # (measured: 8 of 30 codes survived) and orphans every measurement made under
+        # the old codes.
+        existing = None
+        key_csv = custodian / "blinding_key.csv"
+        if key_csv.exists():
+            import csv as _csv
+            with open(key_csv, newline="") as fh:
+                existing = {int(r["tube_id"]): r["code"] for r in _csv.DictReader(fh)}
+            ok(f"extending the existing key: {len(existing)} code(s) kept, only "
+               f"animals not already in it are assigned new ones")
+        codes = blinding.generate_codes(tubes, seed=args.seed, existing=existing)
+        if existing:
+            changed = sorted(t for t, c in codes.items()
+                             if t in existing and existing[t] != c)
+            if changed:
+                fail(f"{len(changed)} animal(s) would change code: {changed[:8]} - "
+                     f"refusing, because that orphans anything already measured")
+                return 1
+    except ValueError as exc:
+        fail(str(exc))
+        return 1
+    ok(f"{len(codes)} coded IDs from random.Random(seed).shuffle over a "
+       f"{len(blinding.CODE_POOL_LETTERS) * len(blinding.CODE_POOL_NUMBERS)}-label pool")
+    print("        the mapping is NOT printed here: a terminal scrollback is not a "
+          "custodian directory.")
+
+    print("  -- split --")
+    try:
+        private, blinded = blinding.split_manifest(
+            df, codes, collapse_duplicate_scans=not args.keep_all_scans)
+    except blinding.UnresolvedConditionError as exc:
+        for line in str(exc).splitlines():
+            fail(line) if line and not line.startswith(" ") else print(f"      {line}")
+        print("\n  blind: refused. Nothing was written.")
+        return 1
+    except (KeyError, ValueError) as exc:
+        fail(f"{type(exc).__name__}: {exc}")
+        return 1
+    report = blinded.attrs.get("blinding_split_report", {})
+    ok(f"private: {len(private)} row(s) x {len(private.columns)} column(s)")
+    ok(f"blinded: {len(blinded)} row(s) x {len(blinded.columns)} column(s) "
+       f"-> {list(blinded.columns)}")
+    print(f"        withheld: {report.get('dropped_columns', [])}")
+    for note in report.get("notes", []):
+        print(f"        note: {note}")
+
+    # Leaks always surface — a tube ID sitting in the blinded file is a bug, not a
+    # judgement call. "Risks" are structural observations (a three-section slide really
+    # is distinctive) and are only interesting if you go looking, so they and the
+    # statistics are behind --audit. See ADR-0015: the mechanism is the random
+    # permutation plus a separately held key, not the report.
+    findings = blinding.audit_blinded(blinded, codes, private)
+    leaks = [f for f in findings if f.startswith("LEAK:")]
+    risks = [f for f in findings if f.startswith("RISK:")]
+    for finding in leaks:
+        fail(finding)
+    if args.audit:
+        print("  -- audit (the blinded manifest, attacked with the key in hand) --")
+        for finding in risks:
+            warn(finding)
+        for key, value in blinded.attrs.get("blinding_audit_stats", {}).items():
+            print(f"        {key} = {value}")
+        if not findings:
+            ok("no leak found. That is not the same as 'there is no leak'.")
+    elif not leaks:
+        ok(f"no tube ID, group or path in the blinded manifest "
+           f"({len(risks)} structural note(s); see --audit)")
+
+    if args.dry_run:
+        print("\n  blind: --dry-run, nothing written.")
+        return 1 if leaks else 0
+
+    print("  -- write --")
+    try:
+        result = blinding.write_blinded(private, blinded, codes, args.seed,
+                                        custodian_dir=custodian, work_dir=work,
+                                        force=args.force, audit=findings)
+    except FileExistsError as exc:
+        for line in str(exc).splitlines():
+            fail(line)
+        return 1
+    except blinding.BlindingLeakError as exc:
+        fail(str(exc).splitlines()[0])
+        print("        nothing was written. --force does not override a leak.")
+        return 1
+    except blinding.CustodianPathError as exc:
+        for line in str(exc).splitlines():
+            fail(line)
+        return 1
+
+    for key in ("key_csv", "key_json", "provenance_csv"):
+        ok(f"custodian: {result[key]}")
+    for key in ("blinded_csv", "report_json"):
+        ok(f"work:      {result[key]}")
+
+    print()
+    print("  " + "=" * 74)
+    print("  THE BLINDING KEY IS IN " + str(custodian))
+    print("  " + "=" * 74)
+    print("  That directory holds the seed and the tube_id -> code mapping. It is inside")
+    print("  the project folder so it syncs and gets backed up, and it is gitignored so")
+    print("  it cannot be pushed. Back it up like anything else you would not want to")
+    print("  lose: without it, every measurement made under these codes is orphaned.")
+    print()
+    print("  It is the only file here that cannot be regenerated from raw data + code.")
+    print(f"  Blinded manifest sha256: {result['blinded_manifest_sha256']}")
+    print()
+    if args.audit:
+        print(f"  blind: {result['n_leaks']} leak(s), {result['n_risks']} risk(s). "
+          f"Risks are judgement calls and are recorded in {Path(result['report_json']).name}.")
+    return 1 if result["n_leaks"] else 0
+
+
+# --------------------------------------------------------------------------------
+def main():
+    parser = argparse.ArgumentParser(
+        prog="ihc", description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="command")
+    for name, fn, help_text in (
+            ("doctor", cmd_doctor, "environment, paths and dehydrated-file check"),
+            ("check-config", cmd_check_config, "parse config, validate slides.csv, list open decisions"),
+            ("verify", cmd_verify, "structural verification of the raw containers"),
+            ("meta", cmd_meta, "metadata sweep over the .vsi index files")):
+        sub.add_parser(name, help=help_text).set_defaults(func=fn)
+
+    manifest = sub.add_parser(
+        "manifest", help="build the section manifest: one row per tissue section",
+        description=(
+            "Join config/slides.csv to the .vsi metadata, one row per section.\n\n"
+            "`condition` (positive / negative / unresolved) is the load-bearing column "
+            "and comes from the wet-lab record only. Box membership comes from the "
+            "stage coordinates. Neither is ever inferred from the images: --crosscheck "
+            "reads pixels and reports whether they AGREE, and cannot relabel anything."),
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    manifest.add_argument("--out", default=None,
+                          help="override work.manifest_dir from config/paths.yaml")
+    manifest.add_argument("--no-rescans", action="store_true",
+                          help="skip RawData/Rescan/ (the re-acquired tubes 51 and 60)")
+    manifest.add_argument("--crosscheck", action="store_true",
+                          help="run the image-based AUDITOR over the slides whose "
+                               "payload is on disk. Reports agreement; never writes "
+                               "`condition`. Takes ~25 s for the 8 payload animals.")
+    manifest.add_argument("--level", type=int, default=3,
+                          help="pyramid level for --crosscheck (default 3 = "
+                               "downsample 8, about 2.6 um/px)")
+    manifest.add_argument("--max-slides", type=int, default=None,
+                          help="stop --crosscheck after this many slides")
+    manifest.set_defaults(func=cmd_manifest)
+
+    blind = sub.add_parser(
+        "blind", help="split the manifest into a private and a blinded one",
+        description=(
+            "Draw coded IDs from a random permutation and split the manifest.\n\n"
+            "Run this ONCE, as the custodian, before anybody looks at an image. "
+            "Re-running it with a different seed re-codes the cohort and orphans every "
+            "QuPath project, annotation and measurement already made under the old key, "
+            "which is why an existing key is an error rather than an overwrite."),
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    blind.add_argument("--seed", required=True,
+                       help="the blinding seed. Required, no default: a default seed is "
+                            "a published key. Recorded with the key, never in git.")
+    blind.add_argument("--manifest", default=None,
+                       help="manifest CSV (default: work/manifest/manifest_analysis.csv, "
+                            "else ihc.ingest.manifest.build_manifest())")
+    blind.add_argument("--keep-all-scans", action="store_true",
+                       help="keep every scan of every section, instead of only the one "
+                            "marked scan_is_preferred. OFF by default, and you almost "
+                            "certainly do not want it: two scans of one slide produce two "
+                            "rows for the same physical section, which is ambiguous "
+                            "downstream and also identifies the two re-acquired animals. "
+                            "The repeat scans are kept in the PRIVATE manifest either way, "
+                            "which is where the ADR-0012 repeatability check reads them.")
+    blind.add_argument("--audit", action="store_true",
+                       help="run the leak checks on the blinded manifest and print them. "
+                            "Off by default: the codes are a random permutation and the key "
+                            "is held separately, which is the whole mechanism. The audit is "
+                            "there if you want reassurance, not a step you must pass.")
+    blind.add_argument("--custodian-dir", default=None,
+                       help="override custodian_root from config/paths.yaml")
+    blind.add_argument("--work-dir", default=None,
+                       help="override work.manifest_dir from config/paths.yaml")
+    blind.add_argument("--force", action="store_true",
+                       help="overwrite an existing key. Does NOT override a leak.")
+    blind.add_argument("--dry-run", action="store_true",
+                       help="split and audit, write nothing")
+    blind.set_defaults(func=cmd_blind)
+
+    args = parser.parse_args()
+    if not getattr(args, "func", None):
+        parser.print_help()
+        return 2
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
