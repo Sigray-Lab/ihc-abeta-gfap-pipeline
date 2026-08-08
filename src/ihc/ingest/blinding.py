@@ -344,7 +344,53 @@ def _code_pool() -> list[str]:
             for number in CODE_POOL_NUMBERS]
 
 
-def generate_codes(tube_ids: Iterable[int], *, seed, existing: dict | None = None) -> dict:
+#: Minimum digits for a numeric seed. `secrets.randbits(128)` gives ~39.
+MIN_NUMERIC_SEED_DIGITS = 12
+
+_DATE_SHAPED = re.compile(r"^(19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$")
+
+
+def _reject_guessable_seed(seed) -> None:
+    """Refuse a seed small enough to brute-force.
+
+    The mapping is deterministic in ``(sorted tube list, seed)``. The cohort roster is
+    public -- it is a constant in this repository -- and the issued codes are in the
+    blinded manifest that the analyst holds. So an attacker does not need to break
+    anything: they enumerate seeds, generate the mapping, and compare against the codes
+    they already have. A date is ~365 tries. A two-digit number is 100.
+
+    This exists because an earlier version of this project claimed such a guard in its
+    decision log while the code had none -- a false assurance, which is worse than a
+    known gap, because nobody re-checks a documented control.
+
+    Draw seeds with ``secrets.randbits(128)``.
+    """
+    text = str(seed).strip()
+    if _DATE_SHAPED.match(text):
+        raise ValueError(
+            f"seed {text!r} is date-shaped (YYYYMMDD). The code mapping is reproducible "
+            f"from (cohort, seed), the cohort roster is public in this repository, and "
+            f"the codes are in the blinded manifest -- so a date is about 365 guesses. "
+            f"Use secrets.randbits(128).")
+    if text.isdigit():
+        if len(text) < MIN_NUMERIC_SEED_DIGITS:
+            raise ValueError(
+                f"seed {text!r} has {len(text)} digits; at least "
+                f"{MIN_NUMERIC_SEED_DIGITS} are required. A short numeric seed is "
+                f"enumerable in seconds. Use secrets.randbits(128).")
+        return
+    # Non-numeric seeds are allowed but must not be a guessable word or phrase. There is
+    # no way to test "unguessable", so require enough length and character variety that
+    # a wordlist attack is not trivial.
+    if len(text) < 16 or len(set(text)) < 8:
+        raise ValueError(
+            f"seed {text!r} is too simple: a non-numeric seed needs at least 16 "
+            f"characters and 8 distinct ones, or it is a wordlist entry. Use "
+            f"secrets.randbits(128) instead of inventing one.")
+
+
+def generate_codes(tube_ids: Iterable[int], *, seed, existing: dict | None = None,
+                   allow_weak_seed: bool = False) -> dict:
     """Map each tube ID to a code label drawn from a random permutation.
 
     The permutation is the whole point. Tube IDs run in contiguous treatment blocks,
@@ -407,6 +453,13 @@ def generate_codes(tube_ids: Iterable[int], *, seed, existing: dict | None = Non
             f"the blinding seed is still {_PENDING!r} in config/config.yaml "
             "(decision D-14). The custodian chooses it and records it outside git; "
             "it is never committed.")
+
+    # allow_weak_seed exists for tests, which legitimately need small deterministic seeds
+    # to check that the same seed reproduces a mapping and a different one does not. It is
+    # keyword-only, defaults to False, and no production call site passes it -- the CLI
+    # never does. Anything that reaches a real key goes through the guard.
+    if not allow_weak_seed:
+        _reject_guessable_seed(seed)
 
     tubes.sort()
     seed = normalise_seed(seed)

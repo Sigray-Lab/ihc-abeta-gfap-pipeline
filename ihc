@@ -165,15 +165,28 @@ def cmd_doctor(args):
     vsi = sorted(raw_root.glob(paths["raw"]["vsi_glob"]))
     expected = load_config()["qc"]["expected_vsi_count"]
     (ok if len(vsi) == expected else warn)(f"{len(vsi)} .vsi index files (expected {expected})")
+    # A payload folder is only real if it CONTAINS PIXELS. A failed transfer leaves the
+    # folder behind holding nothing but error text, and counting it made doctor report
+    # "all checks passed" on a dataset that could not be measured -- exactly the silent
+    # transfer failure this project names as its first gotcha. Animal 58 was the live case.
     payloads = sorted(raw_root.glob("_Image_*_"))
-    ok(f"{len(payloads)} payload folders present "
-       f"({len(vsi) - len(payloads)} animals are index-only, so pixels are unavailable for them)")
+    empty = [p for p in payloads if not any(p.rglob("*.ets"))]
+    real = [p for p in payloads if p not in empty]
+    ok(f"{len(real)} payload folder(s) with pixel data "
+       f"({len(vsi) - len(real)} animal(s) index-only, so pixels are unavailable for them)")
+    for p in empty:
+        listing = sorted(q.name for q in p.iterdir() if q.is_file())[:3]
+        fail(f"{p.name} exists but contains NO .ets pixel data — the transfer failed and "
+             f"left the folder behind. Contents: {listing or 'empty'}. Re-transfer it.")
+        problems += 1
     rescan = raw_root / paths["raw"]["rescan_subdir"]
     if rescan.is_dir():
         rescan_vsi = sorted(rescan.glob(paths["raw"]["vsi_glob"]))
         rescan_payloads = sorted(rescan.glob("_Image_*_"))
+        rescan_tubes = sorted({int(m.group(1)) for f in rescan_vsi
+                               if (m := __import__("re").search(r"Image_(\d+)", f.name))})
         ok(f"{rescan.name}/: {len(rescan_vsi)} re-acquired .vsi, "
-           f"{len(rescan_payloads)} payload folders (tubes 51 and 60, standard exposure)")
+           f"{len(rescan_payloads)} payload folder(s) — tubes {rescan_tubes}")
         vsi += rescan_vsi
         payloads += rescan_payloads
     else:
@@ -181,6 +194,28 @@ def cmd_doctor(args):
              f"acquired at non-standard exposure and should be rescanned (D-1)")
     for slide_record in (raw_root / paths["raw"]["slide_record_xlsx"],):
         (ok if slide_record.exists() else warn)(f"wet-lab record {slide_record.name}")
+
+    print("  -- are the derived artefacts current? --")
+    fp_fn = resolve(["ihc.ingest.manifest"], "inputs_fingerprint")
+    fp_file = paths["work.manifest_dir"] / "inputs_fingerprint.json"
+    if fp_fn is None or not fp_file.exists():
+        warn("no manifest has been built yet, or it predates fingerprinting — run ./ihc manifest")
+    else:
+        now = fp_fn()
+        was = json.loads(fp_file.read_text())
+        if now["digest"] == was["digest"]:
+            ok(f"manifest is current ({now['n_vsi']} index files, "
+               f"{now['n_payloads_with_pixels']} with pixels)")
+        else:
+            fail("the raw data has CHANGED since the manifest was built. Anything derived "
+                 "from it — the blinded manifest, the QuPath delineation project — is "
+                 "stale and quietly short of animals.")
+            fail(f"    built from: {was['n_vsi']} index, {was['n_payloads_with_pixels']} "
+                 f"with pixels, {was['n_rescans']} rescans")
+            fail(f"    on disk now: {now['n_vsi']} index, {now['n_payloads_with_pixels']} "
+                 f"with pixels, {now['n_rescans']} rescans")
+            fail("    fix: ./ihc manifest, then ./ihc blind, then rebuild the QuPath project")
+            problems += 1
 
     print("  -- dehydrated-file check (Dropbox online-only) --")
     print("        a dehydrated file reports a plausible size but stalls on read;")
@@ -430,6 +465,12 @@ def cmd_manifest(args):
         finalise = resolve(["ihc.ingest.manifest"], "finalise_scan_preference")
         if finalise is not None:
             df = finalise(df)
+        fp = resolve(["ihc.ingest.manifest"], "inputs_fingerprint")
+        if fp is not None:
+            import json as _j
+            paths["work.manifest_dir"].mkdir(parents=True, exist_ok=True)
+            (paths["work.manifest_dir"] / "inputs_fingerprint.json").write_text(
+                _j.dumps(fp(), indent=2))
     except Exception as exc:                       # noqa: BLE001 — report, don't traceback
         fail(f"{type(exc).__name__}: {exc}")
         return 1

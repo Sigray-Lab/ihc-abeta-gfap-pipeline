@@ -81,10 +81,18 @@ pd = pytest.importorskip("pandas")
 #: Seeds used wherever a test needs "several independent blindings".  Fixed, so
 #: every probabilistic assertion below is deterministic: for a given
 #: implementation the suite either always passes or always fails.
-SEEDS = (1, 7, 42, 101, 2718, 31415, 20260807, 99991, 123456, 8675309, 555, 13)
+# Strong seeds, because production refuses weak ones (see _reject_guessable_seed) and
+# these run through the same path. Any 12 distinct values do the job -- what these tests
+# check is that different seeds give different mappings and that the block structure is
+# destroyed, neither of which depends on the seed being memorable.
+SEEDS = (
+    100000000001, 100000000007, 100000000042, 100000000101,
+    100000002718, 100000031415, 100000000813, 100000099991,
+    100000123456, 100008675309, 100000000555, 100000000013,
+)
 
 #: The seed used for single-blinding tests.
-SEED = 20260807
+SEED = SEEDS[0]
 
 
 # ==========================================================================
@@ -163,7 +171,7 @@ def test_the_same_seed_is_stable_under_input_order(blinding):
     )
 
 
-@pytest.mark.parametrize("other", [1, 2, 999, 20260806])
+@pytest.mark.parametrize("other", SEEDS[1:5])
 def test_a_different_seed_gives_a_different_mapping(blinding, other):
     """Otherwise the seed is decorative and the permutation is fixed."""
     if other == SEED:
@@ -871,3 +879,60 @@ def test_the_cohort_constants_still_describe_the_cohort():
     assert sum(sizes) == 31
     for tubes in GROUP_BLOCKS.values():
         assert all(isinstance(t, int) for t in tubes)
+
+
+# ==========================================================================
+# The seed guard
+# ==========================================================================
+# This section exists because the guard was DOCUMENTED before it was written. An ADR
+# and a commit message both stated that weak seeds were rejected while the code had no
+# such check, and nobody noticed for a week — a false assurance is worse than a known
+# gap, because a documented control does not get re-checked. These tests make the claim
+# and the code fail together.
+
+@pytest.mark.parametrize("seed", [20260807, 19991231, 20000101])
+def test_date_shaped_seeds_are_refused(blinding, seed):
+    """A date is ~365 guesses.
+
+    The mapping is deterministic in (sorted cohort, seed); the roster is a public
+    constant in this repository and the issued codes are in the blinded manifest an
+    analyst holds. So an attacker enumerates seeds and compares — no cryptanalysis
+    required.
+    """
+    with pytest.raises(ValueError, match="date-shaped"):
+        blinding.generate_codes(list(ALL_TUBES), seed=seed)
+
+
+@pytest.mark.parametrize("seed", [1, 42, 999, 12345, 99999999999])
+def test_short_numeric_seeds_are_refused(blinding, seed):
+    """Anything enumerable in seconds is not a key."""
+    with pytest.raises(ValueError, match="digits"):
+        blinding.generate_codes(list(ALL_TUBES), seed=seed)
+
+
+@pytest.mark.parametrize("seed", ["password", "secret", "blinding", "abc123"])
+def test_weak_word_seeds_are_refused(blinding, seed):
+    """A wordlist entry is not a key either."""
+    with pytest.raises(ValueError, match="too simple"):
+        blinding.generate_codes(list(ALL_TUBES), seed=seed)
+
+
+def test_a_proper_random_seed_is_accepted(blinding):
+    """secrets.randbits(128) is the documented way to draw one, and must work."""
+    import secrets
+    codes = blinding.generate_codes(list(ALL_TUBES), seed=secrets.randbits(128))
+    assert len(codes) == len(ALL_TUBES)
+
+
+def test_the_escape_hatch_is_opt_in_and_never_used_in_production(blinding):
+    """Tests may bypass the guard; the shipped code may not.
+
+    A weak seed is fine in a test that needs a readable constant. It is not fine
+    anywhere that writes a real key, so the CLI must never pass the flag.
+    """
+    assert blinding.generate_codes(list(ALL_TUBES), seed=42, allow_weak_seed=True)
+    cli = (Path(__file__).resolve().parents[1] / "ihc").read_text()
+    assert "allow_weak_seed" not in cli, (
+        "the ihc entry command passes allow_weak_seed — production must not bypass "
+        "the seed guard"
+    )

@@ -1003,6 +1003,48 @@ def load_group_allocation(path=None):
 _GROUPS: dict = {}
 
 
+def inputs_fingerprint(raw_root=None, slides_csv=None) -> dict:
+    """A cheap fingerprint of everything the manifest is built from.
+
+    Exists because derived artefacts went stale twice without anyone noticing. Payload
+    folders arrive in batches over weeks, and a QuPath project built last Tuesday looks
+    exactly like one built this morning -- it just quietly contains fewer animals. The
+    second time, the delineation project was short by seven animals and nothing said so.
+
+    Deliberately coarse: the set of index files, which of them have pixels, and a digest
+    of the two records that decide condition. That is enough to detect "the inputs moved"
+    without hashing 43 GB.
+    """
+    import hashlib
+    from pathlib import Path as _P
+    if raw_root is None:
+        from ihc.util.config import load_paths
+        paths = load_paths()
+        raw_root = paths["raw_root"]
+        slides_csv = slides_csv or paths["config.slides_csv"]
+    raw_root = _P(raw_root)
+
+    vsi = sorted(p.name for p in raw_root.glob("*.vsi"))
+    with_pixels = sorted(
+        p.name for p in raw_root.glob("_Image_*_") if any(p.rglob("*.ets")))
+    rescan_dir = raw_root / "Rescan"
+    rescans = sorted(p.name for p in rescan_dir.glob("*.vsi")) if rescan_dir.is_dir() else []
+
+    h = hashlib.sha256()
+    for item in (vsi, with_pixels, rescans):
+        h.update("\n".join(item).encode())
+    for record in (slides_csv, _P(slides_csv).parent / "section_notes.csv" if slides_csv else None):
+        if record and _P(record).exists():
+            h.update(_P(record).read_bytes())
+
+    return {
+        "n_vsi": len(vsi),
+        "n_payloads_with_pixels": len(with_pixels),
+        "n_rescans": len(rescans),
+        "digest": h.hexdigest()[:16],
+    }
+
+
 def build_manifest(
     raw_root: str | os.PathLike | None = None,
     slides_csv: str | os.PathLike | None = None,

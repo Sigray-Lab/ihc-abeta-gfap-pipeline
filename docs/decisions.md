@@ -490,8 +490,9 @@ measurement yet, but the engineering is sound*. What changed:
   clone and reflog, while `.gitignore` carefully protected the key. Moved to the
   custodian tree; the manifest now reads it from there and yields an empty group, i.e. a
   blinded manifest, for anyone without it. Re-seeded with `secrets.randbits(128)`; the
-  previous seed was date-shaped, which is ~365 guesses given a public cohort roster. A
-  guard now rejects date-shaped and short seeds.
+  previous seed was date-shaped, which is ~365 guesses given a public cohort roster.
+  **Correction (ADR-0019): the guard claimed here was not actually implemented until
+  2026-08-08.**
 - **The provenance manifest was not the master record** it was described as — it read
   the analysis subset and silently dropped bench-excluded rows. It now reads the full
   manifest: 130 of 130.
@@ -563,3 +564,47 @@ autophagy status.
 
 Not a code change. Record as a limitation, and on a subset pair 82E1 with a fibril-selective
 dye and/or 6E10: if the treatment effect holds for both, the worry is closed empirically.
+
+---
+
+## ADR-0019 — Corrections after a follow-up review of the review fixes
+
+**Date:** 2026-08-08 · **Status:** accepted
+
+The reviewer who raised the original findings checked whether the fixes actually landed.
+Most did. Three things did not, and one of them was a false claim in this very log.
+
+**ADR-0016 claimed a seed guard that did not exist.** It stated "a guard now rejects
+date-shaped and short seeds". The patch that was supposed to add it failed silently and
+was never verified — `seed=20260807`, `seed=42` and `seed='password'` were all accepted.
+The key in use had been drawn correctly, so nothing was at risk, but the next person to
+re-code a cohort had no protection and a decision log telling them they did.
+
+**A documented control with no test is how this happens.** The guard is now implemented
+*and* tested — date-shaped, short-numeric and wordlist seeds each have a test asserting
+refusal, plus one asserting the CLI never passes the `allow_weak_seed` escape hatch. If
+the guard disappears again, the suite goes red.
+
+**Staleness was live, not latent.** ADR-0016 listed it among things that "do not change a
+number today". That was wrong at the time of writing: the QuPath project the delineator
+opens held 22 animals while 29 had pixels. Someone would have drawn regions on a cohort
+short by seven animals with nothing to tell them. `./ihc doctor` now fingerprints the
+inputs (index files, which have pixels, and the two records that decide condition) and
+fails when the derived artefacts no longer match. Project rebuilt: 113 images, 29 animals.
+
+**`doctor` greenlit a failed transfer.** Tube 58's payload folder exists but contains only
+error text — no pixel data. `doctor` globbed the folder, counted it, and reported all
+checks passed. That is exactly the silent transfer failure this project names as its first
+gotcha, and the health check was endorsing it. It now requires a payload folder to contain
+at least one `.ets` and fails by name when it does not.
+
+**Figures in the spec had drifted from the data as the cohort filled in.** Corrected in
+`CLAUDE_v1.3.md` with the measurement date, rather than quietly: the between-box gap ratio
+is 1.33–4.00× (not 1.7–2.4×; 20 of 31 slides fall outside the old range), and tile sparsity
+is 1.4–23.6 % (not 5–11 %; two thirds fall outside).
+
+**The one that matters scientifically:** the positive/negative separation margin has
+**narrowed from 8.7× to 1.92×** on the normalised index as the cohort grew from 30 to 122
+sections. There is still no overlap and the record and pixels agree 122/122, so the check
+is sound — but the documented figure overstated the safety by more than fourfold. An
+animal landing between 2 and 4 in future is a case for human review, not an automatic call.

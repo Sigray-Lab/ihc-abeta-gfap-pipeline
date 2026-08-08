@@ -555,7 +555,8 @@ def _real_blinded(data_root, *, include_rescans):
     tube_column = resolve_column(df, "tube_id")
     usable = df[~df[tube_column].astype("int64").isin(sorted(NEEDS_CONFIRMATION_TUBES))]
     codes = blinding_mod.generate_codes(
-        sorted(set(int(t) for t in usable[tube_column].unique())), seed=20260807
+        sorted(set(int(t) for t in usable[tube_column].unique())),
+        seed=20260807, allow_weak_seed=True,   # readable fixture seed; see conftest
     )
     _, blinded = blinding_mod.split_manifest(usable, codes)
     assert isinstance(blinded, pd.DataFrame)
