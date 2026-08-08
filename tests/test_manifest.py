@@ -537,10 +537,12 @@ def test_index_only_animals_still_produce_rows(manifest):
         values = {as_bool(v) for v in rows[payload_column].tolist()}
         if values == {False}:
             without.add(tube)
-    assert without, (
-        "no animal is marked payload_present=False, but 23 of 31 payload folders "
-        "have not been transferred"
-    )
+    # Every tube contributing rows is the invariant, and it is asserted above.
+    # Whether any animal is *currently* index-only is a fact about the transfer, not
+    # about the code: it was 23 of 31, and as of 2026-08-08 it is none. Requiring at
+    # least one would turn completing the cohort into a test failure.
+    if not without:
+        pytest.skip("all payloads have now been transferred; nothing index-only left")
 
 
 @pytest.mark.requires_data
@@ -573,7 +575,8 @@ def test_a_missing_payload_does_not_blank_the_metadata(manifest):
     """
     payload_column = resolve_column(manifest, "payload_present")
     index_only = manifest[manifest[payload_column].map(as_bool) == False]  # noqa: E712
-    assert len(index_only) > 0
+    if len(index_only) == 0:
+        pytest.skip("all payloads have now been transferred; nothing index-only left")
     stage_column = find_column(manifest, "stage_x_um")
     if stage_column is not None:
         assert index_only[stage_column].notna().all(), (

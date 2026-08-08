@@ -608,3 +608,70 @@ is 1.4–23.6 % (not 5–11 %; two thirds fall outside).
 sections. There is still no overlap and the record and pixels agree 122/122, so the check
 is sound — but the documented figure overstated the safety by more than fourfold. An
 animal landing between 2 and 4 in future is a case for human review, not an automatic call.
+
+---
+
+## ADR-0020 — The staining cross-check was measured on the padded tile grid; re-measured, and GFAP is the discriminator
+
+**Date:** 2026-08-08 · **Status:** accepted · **Supersedes the figures in ADR-0019**
+
+### Context
+
+Payloads for tubes 31 and 58 arrived, completing the cohort at 31 animals with
+pixels. Their recorded staining condition had never been checked against pixels,
+because until now they had none. Re-running the check meant re-running the ad-hoc
+script that produced the separation figure quoted in `CLAUDE_v1.3.md` — and that
+script had never been committed, so it had to be rewritten.
+
+Rewriting it surfaced two defects in the original.
+
+**1. It measured on the padded tile grid.** ETS stores tiles as whole 512 px
+blocks, so the last row and column are padded out with zeros. At the coarse pyramid
+level this check uses, that pad is enormous: a 17,920 px image occupies 280 px of a
+single 512 px tile at level 6, so more than two thirds of the assembled plane is
+pad. Those zeros sit below every real pixel and pull the background percentile down,
+which inflates every signal measured against it. This is the same padded-dimensions
+defect `verify.py` was fixed for in Stage 1 (ADR-0002) — reintroduced in a second
+place, which is the recurring shape of this bug.
+
+**2. Its tissue mask could be captured by a single dust speck.** Otsu on raw DAPI is
+not robust to extreme outliers. Tube 32 s2 peaks at 37,612 counts against a normal
+maximum near 670; Otsu put the threshold at 8,889, so 0.03% of the section was
+called "tissue" and every statistic then described the artefact. Nineteen sections
+were affected.
+
+### Decision
+
+Cropping the pad and clipping the DAPI histogram at its 99.5th percentile before
+Otsu fixes both. The check now lives in `src/ihc/qc/stain_check.py` with tests
+pinning each defect, and a `scripts/audit_stain_condition.py` that runs it.
+
+Two consequences for the recorded figures:
+
+**The old separation numbers are not reproducible and are withdrawn.** Both 8.7×
+and the 1.92× that replaced it were measured on the padded grid. Re-measured over
+all 130 sections: GFAP index 1.25–18.98 in positives against 0.27–1.09 in
+negatives, AUC 1.000, medians 9.6× apart, extreme-value margin 1.14×.
+
+**Use GFAP, not Aβ.** Measuring both showed the Aβ index does not separate reliably
+(AUC 0.966, 7 of 128 misassigned) while GFAP separates perfectly (AUC 1.000, 0 of
+128). The reason is biological, not arithmetic: the negative control is
+secondary-only, so both markers drop together, but Aβ is sparse and focal and its
+abundance genuinely varies between animals by disease burden — so a low Aβ index is
+ambiguous in a way a low GFAP index is not. The earlier check happened to use GFAP;
+it is now used deliberately, and `abeta_index` is reported as context only.
+
+**Result:** 128 of 128 measurable sections agree with `slides.csv`, across all 31
+animals, including 31 and 58 on their first check. Two sections (tube 49 s1 at 0.6%
+tissue, tube 52 s4 at 2.4%) have too little tissue in frame to judge and are
+reported rather than scored.
+
+### Consequences
+
+- A figure that has now been wrong twice is finally under test. The pattern in both
+  ADR-0016 and here is the same: a number produced once in a terminal, quoted in a
+  document, and never re-derived. Anything load-bearing gets a module and a test.
+- The QuPath project build had the same problem — no committed entrypoint, rebuilt
+  by hand — and `doctor` told the user to "rebuild the QuPath project" without
+  saying how. It is now `scripts/build_qupath_project.py`.
+- `src/ihc/qc/` is no longer empty, which the follow-up review had flagged.
