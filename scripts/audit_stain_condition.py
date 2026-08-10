@@ -38,7 +38,12 @@ def main(argv: list[str] | None = None) -> int:
     work = Path(paths["work_root"])
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--manifest", type=Path, default=work / "manifest" / "manifest.csv")
-    ap.add_argument("--out", type=Path, default=work / "qc" / "stain_audit.csv")
+    # The custodian tree, not the work tree: this report is keyed by tube_id so that a
+    # disagreement can be chased at the bench, which makes it an identified file. The
+    # work directory is asserted to be free of tube IDs (test_blinding.py), so writing
+    # it there turns a useful report into a failing build.
+    ap.add_argument("--out", type=Path,
+                    default=Path(paths["custodian_root"]) / "stain_audit.csv")
     args = ap.parse_args(argv)
 
     if not args.manifest.exists():

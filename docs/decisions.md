@@ -675,3 +675,81 @@ reported rather than scored.
   by hand — and `doctor` told the user to "rebuild the QuPath project" without
   saying how. It is now `scripts/build_qupath_project.py`.
 - `src/ihc/qc/` is no longer empty, which the follow-up review had flagged.
+
+---
+
+## ADR-0021 — A prior QuPath classifier exists; keep it as a comparator, retrain for measurement
+
+**Date:** 2026-08-10 · **Status:** accepted · **Informs D-5 (resolution), D-2 (artefact method), D-3 (positive class)**
+
+### Context
+
+An earlier manual analysis was carried out in QuPath before this pipeline existed, and
+its project was handed over: 130 images, one trained Aβ pixel classifier, a run script,
+and a partial measurement export covering 68 images. This finally answers a question open
+since the first planning round — whether the lab-standard analysis was ever run. It was,
+as a working draft.
+
+Reading the classifier and the script settles several things we had been arguing from
+theory.
+
+**Resolution: 2.6 µm/px** (`inputResolution` 2.6000734903780036 µm), i.e. downsample 8
+from the native 0.325 µm/px. Our candidate list was `[1, 2, 4]` — the prior work sat well
+outside it, four times coarser than the coarsest option we were considering.
+
+**Feature set: three features.** One Gaussian filter, σ = 1.0, applied to each of DAPI,
+FITC and Cy3. No multiscale, no edge, no texture features.
+
+**Model: `ANN_MLP` with `layer_sizes [3, 3]`** — three inputs, three outputs, no hidden
+layer. Combined with the feature set, this is close to a smoothed three-channel intensity
+threshold rather than a learned texture rule.
+
+**No intensity normalisation:** the feature preprocessor has `offsets [0,0,0]` and
+`scales [1,1,1]`, so it operates on raw counts.
+
+**Denominator: the whole image.** The run script calls `createFullImageAnnotation(true)`,
+so "Aβ %" is measured against the entire frame, glass included.
+
+**Trained on a single animal.**
+
+### Decision
+
+**Retrain rather than reuse, and keep the prior classifier as a comparator.** It is a
+legitimate lab-standard result to report the new pipeline against, and the painting effort
+behind it carries over. It should not become the frozen classifier, for reasons that are
+mechanical rather than a judgement on how carefully it was made:
+
+1. **Raw counts, no normalisation, across a cohort whose exposure varies up to 12.6×**
+   (ADR-0004) — and 2.73× between Control IP and Rapamycin IP on the Aβ channel
+   specifically. An intensity-keyed rule therefore behaves differently per animal, in a
+   way partly aligned with treatment on the channel carrying the primary claim.
+2. **The whole-image denominator** is dominated by how much empty slide is in frame, and
+   section framing varies. It is not comparable between animals. This is what the
+   anatomical ROI work replaces.
+3. Median exported Aβ area is **13.1%**, with values reaching 100% on small annotations.
+   That is far above any plausible immunoreactive area for this material and indicates
+   over-detection, consistent with 1–3 above.
+
+**Resolution: this is the strongest evidence we have for D-5, and it points finer, not
+coarser.** At 2.6 µm/px an intracellular Aβ deposit spans roughly one pixel and a 20 µm
+plaque about eight. Extracellular plaques survive that sampling; intracellular signal
+cannot. The difficulty reported with intracellular Aβ is therefore predicted by the
+resolution alone and is not a training deficiency — more painting at 2.6 µm/px will not
+fix it. Recommend locking **downsample 2 (0.65 µm/px)**, or downsample 1 if intracellular
+Aβ is to be a reported class at all. Candidate list unchanged; the PI decision stands.
+
+**Positive class (D-3):** the same evidence bears on it. If intracellular signal cannot be
+resolved at the working resolution *and* 82E1 also detects βCTF on the pathway rapamycin
+manipulates (ADR-0018), then defining the positive class as extracellular parenchymal
+deposits with a size floor removes a measurement problem and a confound together.
+Recommended, still the PI's to lock.
+
+### Consequences
+
+- Three PENDING decisions now have evidence attached rather than argument.
+- The prior project's measurement export is a working draft, not a result: it mixes
+  training annotations with full-section runs and covers 68 of 130 images. It should not
+  be cited as a completed analysis.
+- The handed-over project sits under `RawData/`, which is meant to hold read-only source
+  images only. It is derived work and belongs elsewhere; noted rather than moved, since
+  moving another person's files is theirs to agree to.

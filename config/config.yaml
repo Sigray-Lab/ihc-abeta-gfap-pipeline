@@ -44,8 +44,14 @@ classifier:
   resolution_downsample:
     abeta_candidates: [1, 2, 4]
     gfap_candidates: [1, 2]
-    abeta_locked: PENDING_PI_DECISION      # DECISION D-5: lock after the blinded pilot
-    gfap_locked: PENDING_PI_DECISION       # DECISION D-5: lock after the blinded pilot
+    # EVIDENCE (ADR-0021): the prior hand-built classifier ran at downsample 8
+    # (2.6 um/px) -- four times coarser than the coarsest candidate here. At that
+    # scale an intracellular Abeta deposit spans about one pixel and a 20 um plaque
+    # about eight, which predicts the reported difficulty with intracellular signal
+    # from the sampling alone. Recommendation: lock 2, or 1 if intracellular Abeta
+    # is to be a reported class. Do not lock 4 or coarser.
+    abeta_locked: PENDING_PI_DECISION      # DECISION D-5: lock after the pilot
+    gfap_locked: PENDING_PI_DECISION       # DECISION D-5: lock after the pilot
 
   # Input-channel policy (carried forward from EXECUTION_PLAN_v2, §6 of v3):
   # the Abeta classifier must not see the GFAP channel and vice versa.
@@ -116,6 +122,10 @@ denominator:
 abeta:
   # D-3. Annotate four classes regardless; the PI chooses which feeds the primary
   # endpoint. Until then the endpoint is undefined and no primary number can be made.
+  # RECOMMENDED (ADR-0021 + ADR-0018): parenchymal_extracellular with a size floor.
+  # Intracellular signal is the hardest to resolve at any working resolution AND the
+  # most confounded, since 82E1 also detects betaCTF on the pathway rapamycin acts on.
+  # Excluding it removes a measurement problem and a confound in one decision.
   positive_class: PENDING_PI_DECISION    # DECISION D-3: parenchymal_extracellular | parenchymal_plus_vascular | all_immunoreactive
   annotation_classes: [parenchymal_extracellular, vascular, intracellular_ambiguous,
                        background_artefact]

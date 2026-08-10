@@ -7,9 +7,8 @@ anything about the code. This is the whole job.
 hippocampus and an outline around the cortex. That is it. The computer measures what is
 inside your outlines afterwards.
 
-**How long it takes:** about 5–15 minutes per section once you are used to it. There
-are a few dozen sections. Do them in batches; there is no rush and no deadline inside a
-single sitting.
+**How long it takes:** about 5–15 minutes per section once you are used to it. There are
+**121 images**. Do them in batches; there is no rush and no deadline inside a single sitting.
 
 ---
 
@@ -48,9 +47,8 @@ finally report is "how much signal, divided by how much area you outlined", movi
 edge changes the answer. Drawing on nuclei only makes that impossible. The outline ends
 up where the anatomy is, not where the signal is.
 
-The image names are codes. `K07_s01` means "animal K07, section 01". **The code is not
-the tube number** and there is no pattern connecting them, so you cannot work out which
-mouse it is, and you should not try (see section 7).
+The image names are codes. `K07_s01` means "animal K07, section 01" — the code is not the
+tube number, so just take the names as given.
 
 ---
 
@@ -87,9 +85,18 @@ section is worth far more than heroic precision on a few.
 
 **Where the boundaries go:**
 
-- **Hippocampus** — the whole hippocampal formation: the curved dentate gyrus plus the
-  CA layers wrapping around it. Follow the outside of the cell layers and the tissue
-  boundary. Do not include the thalamus below it, and do not include the cortex above it.
+- **Hippocampus** — **CA1, CA2, CA3 and the dentate gyrus.** In Allen atlas terms this is
+  **HIP**, and it deliberately does **not** include the subiculum or entorhinal cortex
+  (Allen calls those **RHP**, the retrohippocampal region).
+
+  The cell layers give you the edge: follow the outside of the dark packed bands. The one
+  boundary worth knowing is where **CA1 becomes subiculum** — the pyramidal cell layer
+  suddenly widens and loses its sharp edge. Stop there. That transition is the single
+  most common place for two people to disagree, so it is the one place worth slowing down.
+
+  Do not include the thalamus below, the cortex above, or the white matter tracts
+  (fimbria, alveus) wrapping the outside.
+
 - **Isocortex** — the full thickness of cortex at this level, from the outer surface of
   the brain (the pia) down to the white matter, but **not including** the white matter
   itself. Stop where the cortical layers stop.
@@ -97,6 +104,14 @@ section is worth far more than heroic precision on a few.
   piece of tissue is present, leave it alone.
 - If part of a region runs off the edge of the picture, outline the part that is there.
   Do not guess where the missing part would have been.
+
+**On coronal level.** The sections are all cut at roughly hippocampal level, but not
+identically. Do **not** spend time working out an exact position for each one — that is
+slow and we do not need it. Just glance at whether the hippocampus looks well developed
+with both blades of the dentate gyrus visible. If a section is obviously much further
+forward or back than the others, write that in the description box and carry on. We check
+level-matching afterwards from the outlined areas, which is quicker and more consistent
+than judging it by eye.
 
 **If you are unsure where a boundary is:** draw your best judgement and add a note (see
 section 5). Do not skip the section, and do not open the other channels to help you
@@ -148,34 +163,18 @@ Asking is always the right call. Nothing here is urgent enough to guess about.
 
 ## 6. What NOT to do
 
-**Do not turn the other channels on.** Not to "just check", not to help find a boundary,
-not out of curiosity. If you see the plaques while drawing, the outlines are influenced
-by them and the measurements made inside those outlines can no longer be trusted — and
-there is no way to undo it or to detect it afterwards. This is the single thing on this
-page that would actually damage the study. If you turn them on by accident, do not panic:
-close the image **without saving**, reopen it, and carry on.
+**Do not turn the other channels on.** If you can see the plaques while drawing, the edge
+drifts towards them — not deliberately, but it does, and it cannot be detected afterwards.
+Since the final number is signal divided by the area you outlined, that changes the answer.
+If you turn them on by accident, close the image **without saving**, reopen, carry on.
 
 **Do not rename the images.** The names are the only link between an outline and the
 mouse it came from. A renamed image is an outline that belongs to nobody.
 
-**Do not try to work out which mouse you are looking at.** Not from the code, not from
-the file location, not from the metadata panel, not by counting sections, not by
-comparing with your bench notes. You did the staining and the imaging, so you *could*
-work it out from a tube number — which is exactly why the projects carry codes and no
-tube numbers, why the slide label picture (with the printed number and the barcode) is
-not in the project, and why the images are not in scanning order.
-
-One honest caveat: the original tube number is still buried inside the raw image files
-themselves, and QuPath can show it if you go digging through the full metadata viewer.
-We cannot strip it without re-encoding every image. So this last one is a request rather
-than a lock: **do not go looking.** If you see one by accident, say so — it is not a
-disaster, it just needs recording.
-
 **Do not add other classes**, and do not delete or move images in and out of the project.
 
-**Do not edit outlines after you have gone on to the next image and come back**, unless
-something is clearly wrong. Redrawing a region later, with a fresher eye, quietly makes
-that section different from the others.
+**Do not redraw a region days later** unless something is clearly wrong. A fresher eye
+quietly makes that section different from the rest, and consistency is what we are after.
 
 ---
 
@@ -189,7 +188,8 @@ that section different from the others.
 | Classes | `Hippocampus`, `Isocortex`, and `Artefact` for damage |
 | Save | Ctrl+S / Cmd+S, **every image, before moving on** |
 | Damaged | Draw what is there, mark damage as `Artefact`, write a note |
-| Never | turn on the green/red channels · rename images · identify the mouse |
+| Hippocampus | CA1–3 + dentate gyrus. **Not** subiculum or entorhinal |
+| Never | turn on the green/red channels · rename images |
 
 Anything unclear, anything that looks odd, anything not covered here: ask the person who set this up before
 carrying on. There is no such thing as a silly question about this, and a wrong guess
