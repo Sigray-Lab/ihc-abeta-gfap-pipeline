@@ -753,3 +753,114 @@ Recommended, still the PI's to lock.
 - The handed-over project sits under `RawData/`, which is meant to hold read-only source
   images only. It is derived work and belongs elsewhere; noted rather than moved, since
   moving another person's files is theirs to agree to.
+
+---
+
+## ADR-0022 — Decisions from the 2026-08-11 bench meeting, and two corrections to ADR-0021
+
+**Date:** 2026-08-11 · **Status:** accepted · **Corrects ADR-0021**
+
+### Context
+
+The PI and the person who did the staining and imaging went through the open
+decisions together, with the prior QuPath project open on screen. Several things
+were settled; two of them correct claims made in ADR-0021 on the basis of bench
+knowledge this project did not have.
+
+### Corrections to ADR-0021
+
+**1. Resolution does not make intracellular Aβ measurable. ADR-0021 implied it
+would, and that was wrong.**
+
+ADR-0021 said the reported difficulty with intracellular Aβ was "predicted by the
+resolution alone and is not a training deficiency", and recommended downsample 1 if
+intracellular Aβ were to be a reported class. Both parts need correcting.
+
+The difficulty was never visibility. Intracellular signal *is* visible at 2.6 µm/px
+— a nucleus with signal around it — and it was deliberately painted out during
+training rather than missed. The problem is that it sits close to what would
+otherwise be called background.
+
+More importantly, **no downsample fixes this**, because the limit is not lateral
+sampling. These are 5 µm sections on a widefield scanner, so every pixel integrates
+through the whole section thickness. "Inside this cell" is not establishable from
+such an image at any pixel size; it needs optical sectioning — confocal at 60× or
+better. Finer sampling makes intracellular signal easier to *see* and no easier to
+*attribute*.
+
+Consequence: the restrictive positive class is a **signal-based exclusion**, not a
+compartment assignment, and the methods text must say so. A companion neuronal
+marker (e.g. NeuN) does not rescue it either — it yields a silhouette, not a
+compartment, since the marker channel is subject to the same through-thickness
+integration.
+
+**2. Resolution is not a neutral knob.** Finer resolution tightens the boundary
+drawn around each deposit and therefore shrinks measured area — the diffuse corona
+around a dense core is progressively excluded as resolution increases. Resolution
+and `abeta.positive_class` are entangled, not independent, and a sweep must report
+them together.
+
+### Decisions
+
+**Regions (D-4), now settled.** Hippocampus = Allen **HIP** (CA1–3 + dentate gyrus),
+excluding **RHP**. Cortex = isocortex, full thickness, pia to white matter,
+white matter excluded. A **third region** was added: the whole section minus glass.
+
+**Resolution (D-5): measure it, do not argue it.** Keep one set of painted
+annotations, retrain at each candidate resolution, compare percent area across a
+cohort subset. Retraining on existing annotations is a few minutes' work, so this
+is cheaper than the argument. `abeta_locked`/`gfap_locked` move from
+PENDING_PI_DECISION to PENDING_SWEEP.
+
+**Positive class (D-3): two classifiers, roles declared in advance.** Restrictive
+(extracellular) is primary and reported; generous (all immunoreactivity) is a
+pre-declared sensitivity analysis. Declaring the roles now is what keeps this a
+robustness check rather than two attempts at the same question.
+
+**Delineation method:** hand-drawing now, ABBA deferred. Atlas registration remains
+attractive for subregions (CA1 vs CA3) but is not needed for two large regions.
+
+**Order of work:** Aβ classifier first, GFAP after it is working.
+
+**Δ (D-11) withdrawn as posed.** It was presented as an effect size, which is an
+inference question and out of scope for this pipeline. The pipeline-relevant
+question is narrower — how much human/machine disagreement is tolerable before the
+classifier is trusted — and it can be answered with a conventional agreement
+threshold without reference to any expected treatment effect. Proposed default:
+ICC ≥ 0.8 at animal level.
+
+**GFAP fallback accepted in advance.** Whole-region intensity, not a trained
+classifier, is what most of the field uses for GFAP. If the classifier proves
+unworkable, falling back to region intensity is a legitimate standard method and
+not a failure. Agreeing this now avoids sunk-cost persistence later.
+
+### Findings recorded
+
+**No photobleaching between the original scans and the rescans ~10 days later.**
+The rescans of tubes 51 and 60 look brighter, which was raised as a worry since
+bleaching should make them dimmer. Most of it is exposure: those two slides had Cy3
+corrected from 146 and 398 ms to 1840 ms, i.e. 12.6× and 4.6×. After normalising for
+exposure the rescans still carry **1.24–1.46× more signal per millisecond**, so
+there is no evidence of degradation in either direction that matters. Caveat: framing
+and DAPI exposure also differ, and the 146 ms original sits near the noise floor
+where counts per millisecond stop being linear. No further rescans are needed; a
+clean bleaching test would require identical exposure.
+
+**Folds are essentially absent, by design.** Slides were selected at the bench to
+avoid folds, and a search through the project found none. Guidance to include a
+folded section in classifier training is unachievable and has been changed to use
+whatever artefacts exist — a stray hair, a torn edge, tissue displaced into a
+ventricle.
+
+**Painting technique.** Closed outlines around deposits teach the classifier shape
+rather than signal, and make it seek circular objects. Short strokes only. This was
+established independently at the bench and matches the written guidance.
+
+### Consequences
+
+- `config.yaml` now records region definitions, both positive classes, and the sweep.
+- Both classifier guides and the delineation guide gain the third region and lose
+  the instruction to find a fold.
+- The whole-section region is hand-drawn for now. Deriving it from the counterstain
+  would save roughly two hours and be more reproducible; recorded as available work,
+  not done, because the decision in the room was to draw it.

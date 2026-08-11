@@ -44,14 +44,19 @@ classifier:
   resolution_downsample:
     abeta_candidates: [1, 2, 4]
     gfap_candidates: [1, 2]
-    # EVIDENCE (ADR-0021): the prior hand-built classifier ran at downsample 8
-    # (2.6 um/px) -- four times coarser than the coarsest candidate here. At that
-    # scale an intracellular Abeta deposit spans about one pixel and a 20 um plaque
-    # about eight, which predicts the reported difficulty with intracellular signal
-    # from the sampling alone. Recommendation: lock 2, or 1 if intracellular Abeta
-    # is to be a reported class. Do not lock 4 or coarser.
-    abeta_locked: PENDING_PI_DECISION      # DECISION D-5: lock after the pilot
-    gfap_locked: PENDING_PI_DECISION       # DECISION D-5: lock after the pilot
+    # METHOD SETTLED 2026-08-11 (ADR-0022): do not argue this, measure it.
+    # Keep ONE set of painted annotations, retrain at each candidate resolution,
+    # and compare percent area across a cohort subset. Cheap -- retraining on
+    # existing annotations takes minutes -- and it answers the question directly.
+    # Lock whichever value the sweep supports, then freeze.
+    #
+    # Note the entanglement (raised at the bench, and correct): resolution is not a
+    # neutral knob. Finer resolution tightens the boundary around each deposit and
+    # therefore shrinks measured area. It interacts with abeta.positive_class rather
+    # than being independent of it, so the sweep must report both together.
+    resolution_sweep_candidates: [1, 2, 4, 8]
+    abeta_locked: PENDING_SWEEP            # DECISION D-5: lock from the sweep result
+    gfap_locked: PENDING_SWEEP             # DECISION D-5: lock from the sweep result
 
   # Input-channel policy (carried forward from EXECUTION_PLAN_v2, §6 of v3):
   # the Abeta classifier must not see the GFAP channel and vice versa.
@@ -122,11 +127,23 @@ denominator:
 abeta:
   # D-3. Annotate four classes regardless; the PI chooses which feeds the primary
   # endpoint. Until then the endpoint is undefined and no primary number can be made.
-  # RECOMMENDED (ADR-0021 + ADR-0018): parenchymal_extracellular with a size floor.
-  # Intracellular signal is the hardest to resolve at any working resolution AND the
-  # most confounded, since 82E1 also detects betaCTF on the pathway rapamycin acts on.
-  # Excluding it removes a measurement problem and a confound in one decision.
-  positive_class: PENDING_PI_DECISION    # DECISION D-3: parenchymal_extracellular | parenchymal_plus_vascular | all_immunoreactive
+  # SETTLED 2026-08-11 (ADR-0022): TWO classifiers, with the roles declared in
+  # advance so that running both is a sensitivity analysis and not two attempts at
+  # the same question.
+  #   primary     -- restrictive: extracellular deposits, intracellular excluded.
+  #                  This is the reported endpoint.
+  #   sensitivity -- generous: all Abeta immunoreactivity, intracellular included.
+  #                  Reported as a robustness check, never as the headline.
+  # Rationale: 82E1 also detects betaCTF, which is intracellular and sits on the
+  # autophagy pathway rapamycin manipulates (ADR-0018), so intracellular signal is
+  # the fraction most likely to move for reasons that are not plaque load.
+  positive_class: parenchymal_extracellular          # DECISION D-3, primary
+  positive_class_sensitivity: all_immunoreactive     # DECISION D-3, robustness check
+  # NOT a claim about intracellular vs extracellular ATTRIBUTION -- see ADR-0022.
+  # Widefield imaging of a 5 um section integrates through the full thickness, so
+  # "inside a cell" is not establishable at ANY downsample. That needs optical
+  # sectioning (confocal, 60x). The restrictive class is a signal-based exclusion,
+  # and the methods text must say so rather than implying compartment assignment.
   annotation_classes: [parenchymal_extracellular, vascular, intracellular_ambiguous,
                        background_artefact]
   # Naming is not cosmetic: 82E1 + citrate retrieval under-detects N-truncated and
@@ -244,12 +261,22 @@ gfap_enrichment:
 # 9. Regions
 # =================================================================================
 regions:
-  pi_approved: false                       # DECISION D-4: region definitions
+  pi_approved: true                        # DECISION D-4 settled 2026-08-11 (ADR-0022)
   # THERE IS NO FRONTAL CORTEX IN THIS DATASET. Sections were cut at hippocampal
   # level. The cortical endpoint is isocortex at the sampled level (spec §0).
-  endpoints: [hippocampal_formation, isocortex_at_sampled_level]
-  hippocampus_definition: PENDING_PI_DECISION   # DECISION D-4: whole formation vs CA1-3+DG, subiculum in/out
-  cortex_definition: PENDING_PI_DECISION        # DECISION D-4: full thickness pia-to-white-matter?
+  # The anterior half of each brain IS retained but has not been cut or stained;
+  # a frontal-cortex endpoint remains possible as separate future work.
+  endpoints: [hippocampal_formation, isocortex_at_sampled_level, whole_section]
+  # Allen HIP: CA1, CA2, CA3 and dentate gyrus. RHP (subiculum, entorhinal) is
+  # EXCLUDED -- the CA1/subiculum transition is where two annotators most often
+  # diverge, and the packed cell layers give a followable edge where RHP does not.
+  hippocampus_definition: allen_HIP_CA1_CA3_plus_DG_excluding_RHP
+  cortex_definition: isocortex_full_thickness_pia_to_white_matter_exclusive
+  # Third region, added 2026-08-11: the whole section minus glass. It is the
+  # denominator for a whole-slide burden figure alongside the two anatomical ones.
+  # Drawn by hand for now; deriving it from the counterstain would save roughly
+  # two hours of annotation and be more reproducible (ADR-0022, not yet built).
+  whole_section_definition: all_tissue_in_frame_excluding_glass_and_artefact
   hemisphere_pooling: PENDING_PI_DECISION       # DECISION D-4/D-7: pooled by summing vs separate
   min_region_area_um2: PENDING_PI_DECISION      # DECISION D-4: minimum valid regional area
   registration:

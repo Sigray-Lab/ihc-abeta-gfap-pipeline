@@ -50,15 +50,33 @@ reasons are in `docs/decisions.md` ADR-0021.
 | Setting | Value | Why |
 |---|---|---|
 | **Classifier** | `Random Trees (RTrees)` | The old one had no hidden layer, so it was effectively a brightness threshold. Random Trees can use texture and shape. |
-| **Resolution** | the entry reading **≈0.65 µm/px** | The old one ran at 2.6 µm/px, where an intracellular deposit is one pixel. This is 4× finer. |
+| **Resolution** | start at **≈0.65 µm/px**, then sweep — see below | 4× finer than the old 2.6 µm/px. But this is the one setting to *measure* rather than assume. |
 | **Channels** | **Cy3 only** | The Aβ classifier must not see the GFAP channel, or the two endpoints stop being independent measurements. |
 | **Features** | Gaussian · **Laplacian of Gaussian** · Gradient magnitude · Weighted deviation | LoG is a blob detector — it is what actually finds plaques. The old classifier had one Gaussian and nothing else. |
 | **Scales** | 1, 2, 4, 8 | ≈0.65–5 µm. A "scale" is how far around each pixel the classifier looks; four of them lets one rule handle both a 5 µm speck and a 50 µm plaque. |
 | **Output** | Classification | |
 | **Region** | Everywhere | |
 
-> **Do not start until the resolution is confirmed.** If it is later locked at 0.325 µm/px
-> instead, the classifier must be retrained from scratch — it cannot be adjusted.
+### The resolution sweep
+
+Rather than pick a resolution by argument, **measure it.** Once you have painted your
+annotations, retrain the same annotations at each resolution — `0.325`, `0.65`, `1.3`,
+`2.6` — and compare the percent-area results across a handful of animals. Retraining on
+existing annotations takes minutes, so this is cheaper than the debate.
+
+Two things to expect, because they are not artefacts:
+
+- **Finer resolution gives smaller areas.** The diffuse corona around a dense core gets
+  progressively excluded as the boundary tightens. So resolution and "what counts as a
+  plaque" are the same question asked twice — report them together.
+- **Intracellular Aβ will not resolve at any of these settings.** Going finer makes it
+  easier to *see* and no easier to *attribute*. These are 5 µm sections on a widefield
+  scanner, so every pixel integrates through the whole thickness; establishing that signal
+  is *inside a cell* needs optical sectioning (confocal, 60×). Excluding it is a
+  signal-based judgement, not a compartment assignment, and the methods will say so.
+
+Whichever resolution is chosen, it is then **frozen** — a later change means retraining
+from scratch, not adjusting.
 
 ---
 
@@ -85,7 +103,13 @@ Pick them to span what the classifier will meet:
 - two that look **heavily loaded** with deposits
 - two **sparse**
 - two in the **middle**
-- at least one with a **fold, tear or bad edge** — this is what makes `Ignore*` learnable
+- at least one carrying **whatever artefact you can find**
+
+On that last point: the slides were chosen at the bench to avoid folds, and a search
+through the project found essentially none — which is a compliment to the sectioning, not
+a problem. So do not hunt for a fold. Use what is actually there: a stray hair, a torn
+edge, tissue displaced into a ventricle, an out-of-focus patch. `Ignore*` needs *an*
+example of "not tissue signal", not specifically a fold.
 
 Write the six names down. They get recorded with the frozen classifier, and they should
 not later be used as your check images.
@@ -187,7 +211,9 @@ median of 13% Aβ.
 ```groovy
 def classifier = loadPixelClassifier('Abeta_v1')
 def regions = getAnnotationObjects().findAll {
-    it.getPathClass() in [getPathClass('Hippocampus'), getPathClass('Isocortex')]
+    it.getPathClass() in [getPathClass('Hippocampus'),
+                          getPathClass('Isocortex'),
+                          getPathClass('Section')]
 }
 if (regions.isEmpty()) { println 'NO REGIONS: ' + getProjectEntry().getImageName(); return }
 selectObjects(regions)

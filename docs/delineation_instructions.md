@@ -3,9 +3,9 @@
 You do not need to have used QuPath before, and you do not need to know
 anything about the code. This is the whole job.
 
-**What you are doing:** on each picture of a brain section, draw an outline around the
-hippocampus and an outline around the cortex. That is it. The computer measures what is
-inside your outlines afterwards.
+**What you are doing:** on each picture of a brain section, draw three outlines — around
+the hippocampus, around the cortex, and around the whole piece of tissue. That is it.
+The computer measures what is inside your outlines afterwards.
 
 **How long it takes:** about 5–15 minutes per section once you are used to it. There are
 **121 images**. Do them in batches; there is no rush and no deadline inside a single sitting.
@@ -52,19 +52,20 @@ tube number, so just take the names as given.
 
 ---
 
-## 3. Draw the two regions
+## 3. Draw the three regions
 
-You do this twice per image: once for hippocampus, once for cortex.
+You do this three times per image: hippocampus, cortex, and the whole section.
 
 **Set up the classes once, the first time only:**
 
 1. In the **Annotations** tab on the left, find the class list.
 2. Click the **`...`** (or the cog) → **Add/Remove…** → **Add class**.
-3. Add exactly these two, spelled exactly like this:
+3. Add exactly these three, spelled exactly like this:
    - `Hippocampus`
    - `Isocortex`
+   - `Section`
 
-Spelling matters — the software matches on these names. Capital H, capital I, no spaces.
+Spelling matters — the software matches on these names. Capitals as shown, no spaces.
 
 **Then, for each image:**
 
@@ -76,7 +77,8 @@ Spelling matters — the software matches on these names. Capital H, capital I, 
    points where it curves tightly.
 3. With the new shape still selected, click **`Hippocampus`** in the class list, then
    the **Set class** button. The outline changes colour.
-4. Do the same for the cortex, and set its class to **`Isocortex`**.
+4. Do the same for the cortex (**`Isocortex`**) and for the whole piece of tissue
+   (**`Section`**).
 
 **How accurate does it need to be?** Follow the anatomical boundary as you see it. A
 point every so often along a smooth edge is fine; do not agonise over single pixels. Be
@@ -100,6 +102,10 @@ section is worth far more than heroic precision on a few.
 - **Isocortex** — the full thickness of cortex at this level, from the outer surface of
   the brain (the pia) down to the white matter, but **not including** the white matter
   itself. Stop where the cortical layers stop.
+- **Section** — the whole piece of tissue, everything inside the outer edge of the
+  brain. This one does not need care: follow the tissue boundary roughly and keep the
+  glass out. It is the denominator for a whole-slide burden number, so only the
+  tissue/glass border matters, not anatomy. A quick Brush pass is fine.
 - **One hemisphere only.** These sections are single hemisphere. If a second, partial
   piece of tissue is present, leave it alone.
 - If part of a region runs off the edge of the picture, outline the part that is there.
@@ -134,8 +140,10 @@ the person who set this up reads the project directly.
 
 ## 5. If a section looks damaged
 
-Some sections have folds, tears, holes, bubbles, or areas that are out of focus. This is
-normal and expected. **Do not throw the section away and do not try to fix it.**
+Damage is **rare in this material** — the slides were chosen at the bench to avoid folds,
+and a search through the project found essentially none. But tears, holes, bubbles, stray
+hairs and out-of-focus patches do turn up. **Do not throw the section away and do not try
+to fix it.**
 
 Do this instead:
 
@@ -185,7 +193,7 @@ quietly makes that section different from the rest, and consistency is what we a
 | Open | File → Project… → Open Project → `project.qpproj` |
 | Draw | Polygon tool, click round the edge, double-click to finish |
 | Label | Select the shape → click the class → **Set class** |
-| Classes | `Hippocampus`, `Isocortex`, and `Artefact` for damage |
+| Classes | `Hippocampus`, `Isocortex`, `Section`, plus `Artefact` for damage |
 | Save | Ctrl+S / Cmd+S, **every image, before moving on** |
 | Damaged | Draw what is there, mark damage as `Artefact`, write a note |
 | Hippocampus | CA1–3 + dentate gyrus. **Not** subiculum or entorhinal |

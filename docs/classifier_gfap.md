@@ -96,7 +96,9 @@ Same principle as Aβ — span the range:
 - two that look **strongly stained**
 - two **weakly stained**
 - two **middling**
-- at least one with a **fold or damaged edge**
+- at least one carrying any artefact you can find — a stray hair, a torn edge, an
+  out-of-focus patch. Folds are essentially absent in this material, so do not go
+  looking for one
 
 Two useful facts about this cohort:
 
@@ -196,7 +198,9 @@ them properly before calling it done.
 ```groovy
 def classifier = loadPixelClassifier('GFAP_v1')
 def regions = getAnnotationObjects().findAll {
-    it.getPathClass() in [getPathClass('Hippocampus'), getPathClass('Isocortex')]
+    it.getPathClass() in [getPathClass('Hippocampus'),
+                          getPathClass('Isocortex'),
+                          getPathClass('Section')]
 }
 if (regions.isEmpty()) { println 'NO REGIONS: ' + getProjectEntry().getImageName(); return }
 selectObjects(regions)
