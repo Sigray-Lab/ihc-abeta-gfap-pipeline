@@ -483,6 +483,16 @@ def _token_pattern(tubes=ALL_TUBES) -> re.Pattern:
 
 _TUBE_TOKEN_RE = _token_pattern()
 
+# ISO-8601 timestamps are scrubbed before any leak scan, because they manufacture
+# both halves of a false positive at once. `"created_utc": "2026-08-11T15:34:49Z"`
+# contains the tube tokens 34 and 49, and the substring T15 matches a coded ID from
+# the label pool -- so the line reads as "a tube ID on the same line as a code" and
+# the test fails. Worse, it fails as a function of the time of day the artefact was
+# written, which is the kind of intermittent failure that gets a leak test muted.
+_ISO_TIMESTAMP_RE = re.compile(
+    r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?"
+)
+
 
 def text_tube_id_hits(text: str, tubes=ALL_TUBES) -> list[str]:
     """Tube IDs appearing as standalone numbers anywhere in ``text``.
@@ -529,6 +539,11 @@ def associated_tube_id_hits(text: str, codes=None, tubes=ALL_TUBES) -> list[str]
     hits = set()
     wanted = {str(t) for t in tubes}
     code_values = {str(c) for c in (codes or {}).values()}
+
+    # Timestamps are structured metadata and never a leak vector, but they contain
+    # digit pairs and letter-digit runs that collide with both tube IDs and coded
+    # IDs. Scrub them first -- see _ISO_TIMESTAMP_RE.
+    text = _ISO_TIMESTAMP_RE.sub(" ", text)
 
     for stem_match in _FILENAME_TUBE_RE.finditer(text):
         if stem_match.group(1) in wanted:

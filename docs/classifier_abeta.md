@@ -174,6 +174,33 @@ correcting cosmetics rather than mistakes.
 
 ---
 
+## 5b. There is already a baseline to compare against
+
+A plain intensity thresholder has been built and calibrated automatically, and it is
+sitting in the project as **`Abeta_threshold_900`**. Load it the same way you would load
+any classifier.
+
+It says only "Cy3 above 900 counts is Abeta". No texture, no shape, no size filter. The
+threshold was chosen objectively: it is the lowest value that holds the worst
+negative-control section below 0.05 % area, so it keeps as much real signal as possible
+while still rejecting background.
+
+**Use it as a sanity check on your trained classifier, not as a competitor.** If your
+classifier and this one disagree wildly on the same image, one of them is wrong and it is
+worth finding out which before freezing.
+
+For reference, on the calibration set it gives a median of **0.89 %** Aβ area inside
+tissue, ranging 0.11–5.65 % across animals.
+
+**And here is exactly why the trained classifier is still needed.** At that threshold one
+negative control still reports **0.23 %** "Aβ" — a bright speck or edge that a threshold
+has no way to reject, and which lands *above* the weakest genuine positive at 0.11 %. A
+threshold cannot tell a plaque from any other bright thing. Learning to reject artefacts
+is precisely what `Ignore*` and the trained features add, and it is the part you cannot
+automate.
+
+---
+
 ## 6. The objective check — use the negative controls
 
 This is the part that turns opinion into evidence, and it is better than eyeballing.

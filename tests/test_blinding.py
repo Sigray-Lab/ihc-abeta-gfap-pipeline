@@ -936,3 +936,20 @@ def test_the_escape_hatch_is_opt_in_and_never_used_in_production(blinding):
         "the ihc entry command passes allow_weak_seed — production must not bypass "
         "the seed guard"
     )
+
+
+def test_timestamps_do_not_read_as_a_tube_id_leak():
+    """A timestamp is not a leak, however many tube numbers it happens to contain.
+
+    `"created_utc": "2026-08-11T15:34:49Z"` carries the tube tokens 34 and 49, and
+    the substring T15 collides with the coded-ID label pool -- enough for the scanner
+    to report "a tube ID on the same line as a code". It did, and it did so as a
+    function of the time of day the artefact was written. An intermittent leak test
+    is worse than none, because it gets muted.
+    """
+    codes = {29: "T15", 30: "B16"}
+    assert associated_tube_id_hits('"created_utc": "2026-08-11T15:34:49Z",', codes) == []
+    assert associated_tube_id_hits('"generated": "2026-08-11 15:34:49",', codes) == []
+    # ... but a real association on the same line must still be caught.
+    assert associated_tube_id_hits('"T15": 49,', codes)
+    assert associated_tube_id_hits('tube 49 -> T15', codes)
