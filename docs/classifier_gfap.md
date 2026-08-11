@@ -103,11 +103,12 @@ Two useful facts about this cohort:
 - **GFAP brightness is fairly consistent.** The green channel was imaged at only two
   exposure settings across all 31 animals, a 1.65× range — unlike the red channel, which
   varies 12.6×. So you are not fighting large brightness differences here.
-- **Only 4 sections in the whole cohort remain at the shorter exposure** — the two
+- **Only 4 sections in the whole cohort remain at a non-standard exposure** — the two
   negative sections of **tube 51** and the two of **tube 60**, the slides that were
   re-imaged. The rescans replaced their positive sections, so **no measurement section is
-  affected**. Nothing to do about it; just do not be surprised if those look dimmer, and
-  do not pick them as training images.
+  affected**. Two consequences: do not pick those as training images, and **do not use
+  their negatives for the check in step 8** — being dimmer, they would flatter your
+  false-positive rate. Use any of the other 27 animals with negatives.
 
 ---
 

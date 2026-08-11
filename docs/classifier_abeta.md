@@ -95,6 +95,31 @@ check.
 
 ---
 
+### A note on brightness, since it comes up
+
+Camera exposure on the red channel varies up to **12.6×** across the raw files, which would
+matter a great deal: counts scale with exposure, so a fixed rule finds far more "plaque" in
+a longer-exposed image than a shorter one, for no biological reason.
+
+**It does not affect this work, and here is why.** 29 of the 31 animals were imaged at the
+same Cy3 exposure (1840 ms). The two that were not — tubes 51 and 60 — had their positive
+sections re-imaged, and the rescans are what the analysis uses. **Every positive section in
+the cohort now sits at the same exposure.**
+
+The only leftovers are the **negative control sections of tubes 51 and 60**, which are still
+at the short exposure. So:
+
+- **Do not use tube 51 or 60 sections as training images.**
+- **Do not use their negatives for the check in step 6** — they are dimmer than they should
+  be, which would make your false-positive rate look better than it is. There are 27 other
+  animals with negatives.
+
+Brightness differences you see *within* the standard 1840 ms group are real — section
+thickness, staining, tissue quality — and painting across the range is exactly how the
+classifier learns to cope with them.
+
+---
+
 ## 4. Paint — small strokes, not filled regions
 
 Roughly **10–20 short brush strokes per image**. You are giving examples, not segmenting.
