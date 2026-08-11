@@ -1,7 +1,19 @@
+---
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
 # Training the GFAP classifier — step by step
 
 Do the Aβ classifier first (`classifier_abeta.md`). The mechanics are the same and this
-document assumes you have been through them once.
+document assumes you have been through them once — including **Where to do this**: same
+arrangement, your own project, and at the end you send back only
+`classifiers/pixel_classifiers/GFAP_v1.json`, about 5 kB.
+
+You can reuse the same QuPath project you built for Aβ. The six training images for GFAP
+should be chosen on **staining strength**, though, which is a different spread from the
+plaque-burden spread you used before — see step 5.
 
 **This one is harder, and it is worth knowing why before you start.**
 
@@ -91,10 +103,11 @@ Two useful facts about this cohort:
 - **GFAP brightness is fairly consistent.** The green channel was imaged at only two
   exposure settings across all 31 animals, a 1.65× range — unlike the red channel, which
   varies 12.6×. So you are not fighting large brightness differences here.
-- **Only 4 of the 121 images were imaged at the shorter exposure**, and all four are
-  negative controls (`A09_s01`, `A09_s02`, `R22_s01`, `R22_s02`). No measurement section
-  is affected. You do not need to do anything about this — just do not be surprised if
-  those four look dimmer.
+- **Only 4 sections in the whole cohort remain at the shorter exposure** — the two
+  negative sections of **tube 51** and the two of **tube 60**, the slides that were
+  re-imaged. The rescans replaced their positive sections, so **no measurement section is
+  affected**. Nothing to do about it; just do not be surprised if those look dimmer, and
+  do not pick them as training images.
 
 ---
 

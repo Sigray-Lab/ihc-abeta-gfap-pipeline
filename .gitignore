@@ -17,3 +17,12 @@ __pycache__/
 BlindingKey/
 blinding_key*
 provenance_manifest*
+
+# Generated when converting docs to Word/PDF — build artefacts, and the
+# LaTeX .log embeds absolute home paths.
+*.log
+*.tex
+*.docx
+*.pdf
+*.aux
+*.out

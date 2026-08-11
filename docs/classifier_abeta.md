@@ -1,3 +1,9 @@
+---
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
 # Training the Aβ classifier — step by step
 
 You are teaching QuPath one rule: **which pixels are Aβ deposit and which are not.** Once it
@@ -5,7 +11,30 @@ is trained you freeze it, and the identical rule runs on all 121 images without 
 judgement. That is the whole point — the machine is not smarter than you, it is just
 perfectly consistent.
 
-Work in the blinded project (`~/ihc_work/qupath`). QuPath **0.7.0**.
+## Where to do this
+
+**You do not need a copy of the main analysis project.** Train on your own raw data, then
+send back one small file.
+
+A trained classifier is about **5 kB of JSON**. It contains the rule, not the images — it
+refers to channels by name (`DAPI`, `FITC`, `Cy3`) and to resolution in microns per pixel.
+So a classifier trained in your project applies unchanged in ours.
+
+Set up, once:
+
+1. QuPath **0.7.0** (the pinned version — please check yours matches).
+2. **File → Project… → Create project**, into an empty folder.
+3. Drag in **6 `.vsi` files** — see step 3 for how to choose them. When Bio-Formats asks
+   which series, pick the **20× tissue** series, not Label, Overview or Macro.
+4. Set image type to **Fluorescence** when prompted.
+
+When you are finished, send back **only** the classifier file:
+`<your project>/classifiers/pixel_classifiers/Abeta_v1.json`. Not the project, not the
+images.
+
+One small thing: choose your six by **how they look**, not by tube number. The measurement
+runs on a coded copy at our end, and picking training images by animal identity would put
+that choice into the frozen rule.
 
 Budget about 2 hours. It is not a long job, but it is the job everything downstream
 inherits, so do it in one sitting rather than across several days — your eye shifts
