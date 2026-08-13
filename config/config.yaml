@@ -280,12 +280,22 @@ regions:
   hemisphere_pooling: PENDING_PI_DECISION       # DECISION D-4/D-7: pooled by summing vs separate
   min_region_area_um2: PENDING_PI_DECISION      # DECISION D-4: minimum valid regional area
   registration:
-    method: abba                            # Allen atlas via ABBA, manual QuPath as fallback
-    fallback: manual_qupath
-    atlas_release: PENDING_PI_DECISION      # DECISION D-4: atlas release and ontology version
+    # CORRECTED 2026-08-13 (ADR-0023): this said `method: abba, fallback: manual_qupath`,
+    # which contradicted ADR-0022 -- the 2026-08-11 bench decision was hand-drawing now,
+    # atlas registration deferred. The config was simply stale.
+    method: manual_qupath
+    optional_alternative: abba              # demonstrated to work on this material, ADR-0023
+    # Recorded from the working ABBA export (ADR-0023). Binds only if registration is
+    # actually used; harmless to record now, and it is the release with tooling behind it.
+    atlas_release: allen_ccfv3_ontology_Adult_Mouse_Brain_Allen_Brain_Atlas_V3p1
     allowed_bregma_range_mm: PENDING_PI_DECISION   # DECISION D-4
+    # Acceptance criteria stay open, but the METHOD for setting them is now settled:
+    # register a handful of sections that have also been hand-drawn and report Dice of
+    # atlas HIP/Isocortex against hand-drawn Hippocampus/Isocortex. Costs no extra
+    # annotation, and measures the two routes against each other rather than against
+    # an opinion. "Looks about right by eye" is not a criterion and will not scale to 121.
     boundary_distance_criterion_um: PENDING_PI_DECISION  # DECISION D-4: acceptance criterion
-    region_overlap_criterion_dice: PENDING_PI_DECISION   # DECISION D-4: acceptance criterion
+    region_overlap_criterion_dice: PENDING_PI_DECISION   # DECISION D-4: suggest >= 0.90 for these two large regions
     record_method_per_region: true          # and check fallback frequency is unrelated to group
     hide_marker_channels_while_delineating: true   # spec §9: avoid burden-influenced boundaries
 

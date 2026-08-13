@@ -782,3 +782,40 @@ def test_raw_data_root_is_not_written_by_these_tests():
     assert os.environ.get("IHC_ALLOW_RAW_WRITES") is None, (
         "IHC_ALLOW_RAW_WRITES is set; raw data is read-only (spec section 2)"
     )
+
+
+@pytest.mark.requires_data
+def test_pixel_dimensions_are_not_a_safe_key_for_transferring_annotations(manifest):
+    """Two sections can share width and height. Do not key a transfer on shape.
+
+    Moving annotations between QuPath projects is usually done by matching images on
+    pixel dimensions, and it is wrong here. In this cohort two dimension pairs are
+    shared by different physical sections -- tube 29 sections 01/03, and tube 48
+    sections 02/04. Tube 29 is the animal the first atlas registration was produced
+    for, so the collision is not hypothetical.
+
+    A dimension check would pass for the wrong section, annotations would land, the
+    overlay would look anatomically plausible, and every number downstream would
+    belong to the wrong tissue. Nothing would raise.
+
+    The identity key is ``vsi_sha256 + stack_id``, which is unique across the whole
+    measurement set. This test pins both halves: that shape is NOT unique, so nobody
+    reintroduces it, and that the identity key IS.
+    """
+    def unique(cols):
+        for c in cols:
+            assert c in manifest.columns, f"manifest has no {c!r} column"
+        return len({
+            tuple(r) for r in manifest[list(cols)].astype(str).itertuples(index=False)
+        })
+
+    n = len(manifest)
+    assert unique(["width_px", "height_px"]) < n, (
+        "pixel dimensions are unexpectedly unique in this cohort. If that is now true "
+        "the docstring is stale -- but do not start keying on shape regardless: it is a "
+        "property of the image, not an identity."
+    )
+    assert unique(["vsi_sha256", "stack_id"]) == n, (
+        "vsi_sha256 + stack_id is no longer a unique key across the manifest; "
+        "annotation transfer and any manifest join have lost their safe identity"
+    )

@@ -864,3 +864,119 @@ established independently at the bench and matches the written guidance.
 - The whole-section region is hand-drawn for now. Deriving it from the counterstain
   would save roughly two hours and be more reproducible; recorded as available work,
   not done, because the decision in the room was to draw it.
+
+---
+
+## ADR-0023 — Atlas registration works on this material; hand-drawing stays primary
+
+**Date:** 2026-08-13 · **Status:** accepted · **Corrects a stale value in `config.yaml`**
+
+### Context
+
+The wet-lab scientist got ABBA atlas registration working and delivered a methods document
+plus one exported GeoJSON (Allen CCFv3 regions on tube 29 section 01). A separate session
+assessed it; the claims below were re-verified here against the repo before being accepted.
+
+**Verified independently:**
+
+- The delivered `HIP` is *exactly* CA1–3 + dentate gyrus with subiculum excluded:
+  CA1 2.52 + CA3 1.58 + DG 0.85 = 4.95 mm² against HIP 5.10 mm², residual = CA2, and
+  SUB 0.20 mm² sits outside it. **That is the definition already in
+  `regions.hippocampus_definition`,** so no translation layer is needed between atlas
+  output and our agreed regions. `Isocortex` matches by name too.
+- The export is **affine only** — Left and Right areas are identical to two decimals for
+  every region measured, which a non-linear warp would not preserve.
+- Half the file (228 of 457 annotations) is the contralateral atlas half hanging off the
+  frame; `Left HIP` has 0% of its vertices inside the image. Normal ABBA behaviour on
+  hemisections, but any import must filter to the hemisphere carrying tissue or it will
+  return empty regions without complaining.
+
+### Two obstacles worth keeping, because they are not in the ABBA documentation
+
+1. **Bio-Formats cannot read these `.vsi` files inside Fiji** — slices import, viewer stays
+   black, `ClosedByInterruptException` from `CellSensReader`. QuPath reads the same files
+   because it ships a different Bio-Formats build. Route around it by converting to
+   pyramidal OME-TIFF *from within QuPath*.
+2. **Automated registration fails on hemisections.** elastix optimises whole-image
+   similarity against an atlas plane containing *both* hemispheres, so it drags the
+   hemisection toward the midline trying to cover both halves. Every section in this cohort
+   is a hemisection. Two working routes: ROI-restricted elastix, or BigWarp landmarks.
+
+### Decision
+
+**Hand-drawing remains primary. Do not re-plan around ABBA.** Reasoning:
+
+- Speed to first result does not improve: hand-drawing is 5–15 min per section with no
+  precondition, against a 10–20 hour conversion, 50–80 GB, per-section Z positioning and
+  manual pre-alignment — for an affine-only result attested by eye on one section.
+- The failure modes are worse. A bad hand-drawn outline is visible to the person drawing
+  it; a bad registration looks plausible and is only caught by a criterion nobody has set.
+- Two large regions, already matched by name and definition to what a human is drawing.
+
+**`config.yaml` was stale and is corrected here.** It read `method: abba, fallback:
+manual_qupath`, contradicting ADR-0022. Now `method: manual_qupath` with ABBA recorded as
+an optional alternative.
+
+**`atlas_release` recorded** as Allen CCFv3 / `Adult_Mouse_Brain_-_Allen_Brain_Atlas_V3p1`.
+It binds only if registration is used.
+
+**Acceptance-criterion method settled** (the values stay open): register a handful of
+sections that have *also* been hand-drawn and report Dice between atlas and hand-drawn
+regions. No extra annotation cost, and it measures the two routes against each other.
+
+### What atlas registration would buy, if revisited
+
+229 regions instead of 3 — CA1 vs CA3 vs DG subregional analysis, which hand-drawing
+cannot recover afterwards. **If that is wanted it must be pre-declared as exploratory
+before anyone has seen a regional number.** It would also give an independent check on the
+hand-drawn boundaries, and would let the peri-plaque distance bands be resolved
+anatomically rather than pooled.
+
+**Critical path is unchanged: the classifier.**
+
+---
+
+## ADR-0024 — Never-acquired tiles: the real rule, and a claim that did not survive checking
+
+**Date:** 2026-08-13 · **Status:** accepted
+
+### Context
+
+The ABBA assessment raised a serious-sounding risk: the tile grid in this cohort is sparse
+(1.4–23.6% of positions never acquired), and ADR-0010 treats those as *missing support*
+rather than background. Written into OME-TIFF they become ordinary black pixels. The
+assessment concluded this would inflate "every denominator by up to a quarter, unevenly
+across sections", and that measurement must therefore stay on the `.vsi` originals.
+
+**The mechanism is right. The magnitude is not.** Measured across 8 sections spanning
+4.3–23.6% sparsity: the fraction of *tissue* pixels falling on never-acquired tile
+positions is **0.000% in every one of them.**
+
+That is not luck. The scanner's sample mask skips tile positions containing no tissue, so
+unacquired support lies outside tissue *by construction*.
+
+### Decision
+
+The agreed denominator is `ROI ∩ acquired-support ∩ tissue − artefact`. Since
+`tissue ∩ unacquired ≈ 0`, **the acquired-support term is redundant for any denominator
+that already intersects tissue** — which both anatomical regions and the whole-section
+region do. Keep it as a cheap invariant, not as a live correction.
+
+It becomes load-bearing only for a denominator defined **without** a tissue intersection —
+a raw bounding box, or a whole-frame percentage. The earlier whole-image method
+(ADR-0021) was exactly that shape, which is one more reason not to return to it.
+
+**The rule worth recording is narrower and more precise than "measure on `.vsi`":**
+acquired support is a property of the **`.ets` tile index, never of pixel values**. No
+pixel format — `.vsi` included — distinguishes a never-acquired tile from a black one.
+Reading through QuPath does not recover it either. So if the term is ever needed, it must
+be computed from the tile index and carried explicitly, whatever the pixel source.
+
+### Consequences
+
+- Converting to OME-TIFF for registration is **safe** for the current endpoints. The
+  earlier conclusion that it would corrupt them does not hold for tissue-intersected ROIs.
+- Any future denominator that is not tissue-intersected must derive acquired support from
+  the `.ets` index and say so.
+- A useful reminder that a correct mechanism and a material effect are different claims,
+  and that the second one is cheap to measure here.

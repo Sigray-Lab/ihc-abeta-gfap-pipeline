@@ -1,3 +1,8 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
 # Drawing the brain regions — a step-by-step guide
 
 You do not need to have used QuPath before, and you do not need to know
