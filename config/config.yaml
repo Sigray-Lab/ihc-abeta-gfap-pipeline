@@ -98,13 +98,18 @@ masks:
     dilate_um: 0
 
   acquired_support:
-    # THE SPARSE TILE GRID. 5-11 % of tile positions inside the bounding box were
-    # never acquired (scanner sample mask). Never-acquired tiles are MISSING SUPPORT,
-    # not background: they are excluded from the denominator, not counted as negative.
-    # This term is not optional and has no PI decision attached — it is forced by the
-    # data.
+    # THE SPARSE TILE GRID. 1.4-23.6 % of tile positions inside the bounding box were
+    # never acquired (scanner sample mask) -- measured across the full cohort; the
+    # earlier "5-11 %" here was from the first eight animals.
+    #
+    # These are MISSING SUPPORT, not background. In practice the term is a cheap
+    # invariant rather than a live correction: 0.000 % of TISSUE pixels fall on
+    # unacquired tiles, because the scanner skips positions with no tissue (ADR-0024).
+    # It only bites for a denominator that does not intersect tissue.
     enabled: true
-    fail_if_sparsity_fraction_above: 0.25   # far outside the observed 0.05-0.11 band
+    # Was 0.25, which sat 1.4 points above the worst observed value (23.6 %) -- a
+    # trip-wire that would have fired on an ordinary section rather than a broken one.
+    fail_if_sparsity_fraction_above: 0.40
     report_sparsity_per_series: true
 
 # =================================================================================
@@ -127,18 +132,15 @@ denominator:
 abeta:
   # D-3. Annotate four classes regardless; the PI chooses which feeds the primary
   # endpoint. Until then the endpoint is undefined and no primary number can be made.
-  # SETTLED 2026-08-11 (ADR-0022): TWO classifiers, with the roles declared in
-  # advance so that running both is a sensitivity analysis and not two attempts at
-  # the same question.
-  #   primary     -- restrictive: extracellular deposits, intracellular excluded.
-  #                  This is the reported endpoint.
-  #   sensitivity -- generous: all Abeta immunoreactivity, intracellular included.
-  #                  Reported as a robustness check, never as the headline.
+  # SETTLED 2026-08-11 (ADR-0022): TWO classifiers, decided before running either.
+  #   reported  -- restrictive: extracellular deposits, intracellular painted out.
+  #   comparison -- generous: all Abeta immunoreactivity, intracellular included.
+  # Run both, report the restrictive one, keep the generous one alongside as a check.
   # Rationale: 82E1 also detects betaCTF, which is intracellular and sits on the
   # autophagy pathway rapamycin manipulates (ADR-0018), so intracellular signal is
   # the fraction most likely to move for reasons that are not plaque load.
-  positive_class: parenchymal_extracellular          # DECISION D-3, primary
-  positive_class_sensitivity: all_immunoreactive     # DECISION D-3, robustness check
+  positive_class: parenchymal_extracellular          # DECISION D-3, reported
+  positive_class_comparison: all_immunoreactive      # DECISION D-3, run alongside
   # NOT a claim about intracellular vs extracellular ATTRIBUTION -- see ADR-0022.
   # Widefield imaging of a 5 um section integrates through the full thickness, so
   # "inside a cell" is not establishable at ANY downsample. That needs optical
@@ -289,6 +291,10 @@ regions:
     # actually used; harmless to record now, and it is the release with tooling behind it.
     atlas_release: allen_ccfv3_ontology_Adult_Mouse_Brain_Allen_Brain_Atlas_V3p1
     allowed_bregma_range_mm: PENDING_PI_DECISION   # DECISION D-4
+    # Subregions ARE wanted (2026-08-13). Atlas registration is the only route to them
+    # -- hand-drawn Hippocampus/Isocortex cannot be split afterwards. Not a reason to
+    # change the delineation route now; a reason to keep the ABBA work alive.
+    subregions_wanted: [CA1, CA2, CA3, DG]
     # Acceptance criteria stay open, but the METHOD for setting them is now settled:
     # register a handful of sections that have also been hand-drawn and report Dice of
     # atlas HIP/Isocortex against hand-drawn Hippocampus/Isocortex. Costs no extra
