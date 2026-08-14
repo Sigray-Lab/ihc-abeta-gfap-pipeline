@@ -1,0 +1,121 @@
+/*
+ * retrain.groovy — rebuild the Abeta classifier headlessly, with per-image
+ * normalisation, from the wet-lab scientist's own training annotations.
+ *
+ *   QuPath script -p <project.qpproj> --args "<sigma>,<outName>,<umPerPx>" retrain.groovy
+ *
+ * sigma = local-normalisation Gaussian sigma in PIXELS at the working resolution.
+ *         0 disables it, reproducing the delivered classifier as a control.
+ *
+ * Why local normalisation and not the "Normalization" option in the training
+ * dialog: that one fits ONE offset/scale per feature from the pooled training data
+ * and applies it to every image identically. The trees are then trained on those
+ * normalised features, so their thresholds are already in normalised units --
+ * a fixed monotonic per-feature rescale cannot change a decision tree's output at
+ * all. It would look like a fix in the JSON and change nothing in the numbers.
+ * Local normalisation divides each pixel by variation measured in its own
+ * neighbourhood, inside each image, which is what actually removes the
+ * section-to-section brightness dependence.
+ */
+
+import qupath.lib.images.servers.ColorTransforms
+import qupath.lib.images.servers.PixelCalibration
+import qupath.lib.io.PathIO
+import qupath.lib.objects.classes.PathClass
+import qupath.opencv.ml.OpenCVClassifiers
+import qupath.opencv.ml.pixel.PixelClassifiers
+import qupath.opencv.ops.ImageOps
+import qupath.opencv.tools.MultiscaleFeatures.MultiscaleFeature
+import qupath.process.gui.commands.ml.PixelClassifierTraining
+import qupath.lib.classifiers.pixel.PixelClassifierMetadata
+import org.bytedeco.opencv.opencv_ml.RTrees
+
+// args: "<sigma>,<outName>,<umPerPx>,<annotationDir>,<mappingFile>,<outputDir>"
+def parts = (args[0] as String).split(',')
+double SIGMA   = parts[0] as double
+String OUT     = parts[1]
+double UM      = parts[2] as double
+String ANNO_DIR = parts[3]
+String MAP_FILE = parts[4]
+String OUT_DIR  = parts[5]
+
+// Which annotation file belongs on which image. Read from a mapping file rather
+// than hard-coded, because that mapping IS part of the blinding key --seven rows of it
+// would put tube -> code pairs into this repository.
+//
+// Format: one "sourceStem,targetImageName" per line, e.g.  Image_NN_s01,<code>_s01
+//
+// NOTE the remap is not a rename. A rescan's series _01 is a DIFFERENT physical
+// section from the original's _01 (it is physical section 03), so matching by name,
+// or by pixel dimensions, silently lands annotations on the wrong tissue -- in this
+// cohort, on a negative control. Build the mapping from the manifest, not by eye.
+def MAP = [:]
+new File(MAP_FILE).eachLine { line ->
+    line = line.trim()
+    if (!line || line.startsWith('#')) return
+    def bits = line.split(',')
+    MAP[bits[0].trim()] = bits[1].trim()
+}
+println "  mapping: ${MAP.size()} annotation file(s)"
+
+def project = getProject()
+def byName = [:]
+project.getImageList().each{ byName[it.getImageName()] = it }
+
+// ---- 1. load each training image and attach its annotations -----------------
+def imageDataList = []
+MAP.each { src, target ->
+    def entry = byName[target]
+    if (entry == null) { println "MISSING image ${target}"; return }
+    def f = new File("${ANNO_DIR}/${src}_annotations.geojson")
+    if (!f.exists()) { println "MISSING annotations ${f}"; return }
+    def imageData = entry.readImageData()
+    imageData.getHierarchy().clearAll()
+    def objs = PathIO.readObjects(f)
+    imageData.getHierarchy().addObjects(objs)
+    def counts = objs.groupBy{ it.getPathClass()?.toString() }.collectEntries{ k,v -> [k, v.size()] }
+    println "  ${src} -> ${target}: ${objs.size()} objects ${counts}"
+    imageDataList << imageData
+}
+if (imageDataList.isEmpty()) { println 'NO TRAINING DATA'; return }
+
+// ---- 2. feature op: Cy3 -> [local normalisation] -> 12 multiscale features --
+def feats = [MultiscaleFeature.GAUSSIAN, MultiscaleFeature.LAPLACIAN,
+             MultiscaleFeature.WEIGHTED_STD_DEV, MultiscaleFeature.GRADIENT_MAGNITUDE]
+def scaleOps = [1.0, 2.0, 4.0].collect { s -> ImageOps.Filters.features(feats, s, s) }
+
+def ops = []
+if (SIGMA > 0) ops << ImageOps.Normalize.localNormalization(SIGMA, 0.0)
+ops << ImageOps.Core.splitMerge(scaleOps)
+
+def op = ImageOps.buildImageDataOp(ColorTransforms.createChannelExtractor('Cy3'))
+                 .appendOps(ops as qupath.opencv.ops.ImageOp[])
+
+// ---- 3. train ---------------------------------------------------------------
+def cal = new PixelCalibration.Builder().pixelSizeMicrons(UM, UM).build()
+def training = new PixelClassifierTraining(op)
+training.setResolution(cal)
+
+def data = training.createTrainingData(imageDataList)
+def trainData = data.getTrainData()
+def labels = data.getLabelMap()
+println "  training samples: ${trainData.getNSamples()}  features: ${trainData.getNVars()}  labels: ${labels}"
+
+def statModel = OpenCVClassifiers.createStatModel(RTrees.class)
+statModel.train(trainData)
+
+// ---- 4. assemble and save ---------------------------------------------------
+// labelMap is PathClass -> Integer; the metadata wants Integer -> PathClass
+def byLabel = [:]
+labels.each { pc, ix -> byLabel[ix as Integer] = pc }
+def metadata = new PixelClassifierMetadata.Builder()
+        .inputResolution(cal)
+        .inputShape(512, 512)
+        .setChannelType(qupath.lib.images.servers.ImageServerMetadata.ChannelType.CLASSIFICATION)
+        .classificationLabels(byLabel)
+        .build()
+
+def classifier = PixelClassifiers.createClassifier(statModel, op, metadata, true)
+def outPath = java.nio.file.Paths.get(OUT_DIR, OUT + '.json')
+PixelClassifiers.writeClassifier(classifier, outPath)
+println "WROTE ${outPath}"
