@@ -30,7 +30,17 @@ import qupath.process.gui.commands.ml.PixelClassifierTraining
 import qupath.lib.classifiers.pixel.PixelClassifierMetadata
 import org.bytedeco.opencv.opencv_ml.RTrees
 
-// args: "<sigma>,<outName>,<umPerPx>,<annotationDir>,<mappingFile>,<outputDir>"
+// args: "<sigmaMean>,<outName>,<umPerPx>,<annotationDir>,<mappingFile>,<outputDir>[,<sigmaVar>]"
+//
+// sigmaMean and sigmaVar are in PIXELS at the working resolution.
+//   sigmaVar = 0  -> Gaussian local MEAN SUBTRACTION only. Removes an additive
+//                   offset and leaves multiplicative gain untouched: doubling the
+//                   input doubles the output. This is what an earlier sweep ran,
+//                   and it is why that sweep could not have fixed a gain problem.
+//   sigmaVar > 0  -> local mean subtraction AND division by local standard
+//                   deviation. Gain-invariant: doubling the input leaves the
+//                   output unchanged. Verified directly against
+//                   LocalNormalization.gaussianNormalize2D.
 def parts = (args[0] as String).split(',')
 double SIGMA   = parts[0] as double
 String OUT     = parts[1]
@@ -38,6 +48,7 @@ double UM      = parts[2] as double
 String ANNO_DIR = parts[3]
 String MAP_FILE = parts[4]
 String OUT_DIR  = parts[5]
+double SIGMA_VAR = parts.length > 6 ? (parts[6] as double) : 0.0
 
 // Which annotation file belongs on which image. Read from a mapping file rather
 // than hard-coded, because that mapping IS part of the blinding key --seven rows of it
@@ -57,6 +68,7 @@ new File(MAP_FILE).eachLine { line ->
     MAP[bits[0].trim()] = bits[1].trim()
 }
 println "  mapping: ${MAP.size()} annotation file(s)"
+println "  normalisation: sigmaMean=${SIGMA}px sigmaVar=${SIGMA_VAR}px " + (SIGMA_VAR > 0 ? "(GAIN-INVARIANT)" : SIGMA > 0 ? "(mean subtraction only)" : "(none)")
 
 def project = getProject()
 def byName = [:]
@@ -85,7 +97,7 @@ def feats = [MultiscaleFeature.GAUSSIAN, MultiscaleFeature.LAPLACIAN,
 def scaleOps = [1.0, 2.0, 4.0].collect { s -> ImageOps.Filters.features(feats, s, s) }
 
 def ops = []
-if (SIGMA > 0) ops << ImageOps.Normalize.localNormalization(SIGMA, 0.0)
+if (SIGMA > 0) ops << ImageOps.Normalize.localNormalization(SIGMA, SIGMA_VAR)
 ops << ImageOps.Core.splitMerge(scaleOps)
 
 def op = ImageOps.buildImageDataOp(ColorTransforms.createChannelExtractor('Cy3'))
