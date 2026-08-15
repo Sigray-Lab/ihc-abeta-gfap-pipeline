@@ -82,6 +82,35 @@ every other respect:
 | `abeta_rt_norm50` | local, σ = 50 px |
 | `abeta_rt_norm100` | local, σ = 100 px |
 
+### Result: rejected
+
+| Normalisation | r (controls) | separation | rescan/original |
+|---|---|---|---|
+| none (control) | +0.83 | **1059×** | 33.9× |
+| σ=25 px | +0.93 | 54× | 7.9× |
+| σ=50 px | +0.89 | 100× | 6.2× |
+| σ=100 px | +0.86 | 101× | 6.3× |
+
+The falsification criterion was met: separation collapsed 10–20×, false positives on the
+controls rose 8–16×, and the brightness correlation got *worse*, not better. Raising σ
+above plaque scale plateaued rather than rescued. **Local normalisation is the wrong tool
+and the unnormalised classifier stands.**
+
+### And the case for needing any correction is weaker than first stated
+
+DAPI carries no amyloid information, so it probes for a section-level factor:
+measured Aβ % tracks DAPI at **+0.66** in stained sections but only **+0.08** in the
+controls. More importantly, the artefact demonstrated in the controls operates at the
+**0.005–0.07 %** scale while stained sections span **0.67–50 %** — it cannot explain a
+75× range. Much of the between-animal variation may be genuine burden.
+
+This is a known problem, not a novel one: the standard published protocol
+(PMC7299244) holds the threshold constant within an animal but explicitly adjusts it
+per animal for background — *"different animals exhibit somewhat lower or higher levels
+of background immunoreactivity … thresholded using a predetermined increment (e.g.
+5–10 U) above the standard."* Training once and applying uniformly, as done here, is
+more rigorous than that, not less.
+
 **This is not assumed to work.** Local normalisation with σ near plaque size would
 normalise plaques away. The falsification criterion is explicit:
 
