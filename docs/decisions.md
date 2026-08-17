@@ -1054,8 +1054,8 @@ narrower claim than the one this ADR replaces.
 Also corrected here: the between/within variance ratio of **7.4** reported in
 `RESPONSE_to_independent_assessment.md` §4 was `(SD of animal means)² ÷ (median
 within-animal SD)²`, which is not a variance-component estimator. The proper one-way
-random-effects estimate on the fixed denominator is between 0.077 pp², within 0.019 pp²,
-**ratio 4.0, ICC 0.80** — and it is not analytical repeatability, since these are
+random-effects estimate on the fixed denominator is between 0.085 pp², within 0.019 pp²,
+**ratio 4.4, ICC 0.81** — and it is not analytical repeatability, since these are
 different physical sections.
 
 - Percent area quoted anywhere in this project uses the DAPI denominator. Numbers computed
