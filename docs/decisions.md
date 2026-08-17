@@ -1070,3 +1070,43 @@ different physical sections.
 ### Full record
 
 `docs/brightness_problem_briefing/FIXED_DENOMINATOR_results_2026-08-17.md`
+
+---
+
+## ADR-0026 — Manual hippocampus is deliberately not matched to the atlas extent
+
+**Date:** 2026-08-17 · **Status:** accepted
+
+### Context
+
+Agreed at the 2026-08-17 meeting: the wet-lab scientist draws **one hippocampal profile per
+section — whichever is easier to define by eye** — rather than the full extent, and the
+full region comes from ABBA registration later.
+
+The concern raised against this was that the hand-drawn and atlas regions would then cover
+different anatomy, so the manual pass could no longer serve as the cross-check on
+registration that the plan assigns it.
+
+**That concern does not hold, and the objection is withdrawn.** Atlas registration returns
+a *per-pixel region label*, not a single outline. So the atlas hippocampus can be
+intersected with the manual outline after the fact, and burden compared on matched extent
+whenever the check is wanted. Deferring the full delineation costs no information.
+
+### Decision
+
+Manual delineation stays quick and by eye: one hippocampal profile per section, the clearer
+one, no attempt to match the atlas definition. Speed is the point — it is the wet-lab
+scientist's time and the atlas is the endpoint.
+
+Any manual-vs-atlas comparison is computed on `atlas HIP ∩ manual outline`, never on the
+raw pair.
+
+### Consequences
+
+- Manual and atlas hippocampus numbers are **not interchangeable** and must never be pooled
+  or substituted for one another in a single analysis. Only the intersection is comparable.
+- If registration fails for an animal, that animal needs a *full* manual hippocampus drawn
+  to the definition in `delineation_instructions.md` — the quick outline is not a drop-in
+  fallback.
+- A manual-vs-atlas disagreement on unmatched extent is expected and is not evidence of a
+  registration failure.

@@ -104,6 +104,12 @@ section is worth far more than heroic precision on a few.
   Do not include the thalamus below, the cortex above, or the white matter tracts
   (fimbria, alveus) wrapping the outside.
 
+  **One hippocampus per section, not two.** If more than one hippocampal profile is
+  visible, outline only the one that is easier to define by eye, and leave the other. Do
+  not draw both. Quick and consistent beats complete here — the full extent comes from the
+  atlas later, and because the atlas labels every pixel we can trim it back to match what
+  you drew whenever the two need comparing.
+
 - **Isocortex** — the full thickness of cortex at this level, from the outer surface of
   the brain (the pia) down to the white matter, but **not including** the white matter
   itself. Stop where the cortical layers stop.
