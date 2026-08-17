@@ -980,3 +980,93 @@ be computed from the tile index and carried explicitly, whatever the pixel sourc
   the `.ets` index and say so.
 - A useful reminder that a correct mechanism and a material effect are different claims,
   and that the second one is cheap to measure here.
+
+---
+
+## ADR-0025 — The percent-area denominator is computed from DAPI, not from the classifier
+
+**Date:** 2026-08-17 · **Status:** accepted · **Supersedes the denominator half of ADR-0024**
+
+### Context
+
+An independent re-review of the brightness work found a defect we had not seen: the Aβ
+classifier was setting **both halves** of the ratio it was being judged on.
+
+QuPath excludes the `Ignore*` class from measurements, so the tissue area we reported was
+`Abeta area + Negative area` — and `Ignore*` is a *learned* class. Every classifier
+therefore carried its own denominator, and the head-to-head comparison in
+`RESPONSE_to_independent_assessment.md` §4 compared two ratios that shared no common
+basis.
+
+Measured, not assumed:
+
+| Check | Result |
+|---|---|
+| Images where z130 and unnormalised tissue area differ >5 % | **100 of 121** |
+| Range of that ratio | 0.419 – 2.40 |
+| Control/positive tissue ratio within animal, **z130** | **1.206**, >1.0 in **all 25** animals |
+| Control/positive tissue ratio within animal, unnormalised | 0.980 |
+
+The third row is the damaging one. The candidate classifier was giving secondary-only
+control sections a ~21 % larger denominator than stained sections from the same animal,
+which deflates control percentages — in exactly the direction that flattered the
+conclusion we were arguing for. Not a rounding issue; a systematic bias aligned with the
+claim.
+
+### Decision
+
+**The denominator is computed once, from DAPI, independently of any classifier**, in
+`pipeline/src/ihc/qc/tissue_mask.py`. Every classifier is scored against the same one.
+Otsu on DAPI at ~10 µm/px with the histogram clipped at its 99.5th percentile, binary
+closing (7×7), fill holes, keep components above 2 % of the largest.
+
+The mask is validated rather than assumed, because a brightness-dependent denominator
+would reintroduce the problem it exists to remove: median **21.2 mm²** against an atlas
+hemisphere reference of 22.13; brightness correlation **−0.10** (stained) and **+0.05**
+(controls); control/positive ratio **0.985**.
+
+Two earlier versions failed and are recorded in the module docstring, because both looked
+correct until measured. Otsu keeping only the largest component gave brightness
+correlations of +0.38/+0.43 — dim sections fragment, so "largest component" discards more
+area the dimmer the section, and the dependence was manufactured by the cleanup step. A
+per-section `median + 3·MAD` threshold collapsed to 0.6 mm² against a true ~21, because
+tissue is ~55 % of the frame so the global median sits inside tissue.
+
+### Consequences
+
+**One of our conclusions did not survive the fix.** On the learned denominator, z130
+agreed better with a classifier-free burden anchor than the unnormalised model did
+(ρ 0.73 vs 0.42). On the fixed denominator that advantage is gone — **0.44 vs 0.44**. The
+claim that z130 tracks real burden better is withdrawn.
+
+What does survive, on common rows (119 sections, 67 stained / 52 control):
+
+| Classifier | r NEG | neg median | neg MAX | dim→bright | anchor ρ |
+|---|---|---|---|---|---|
+| unnormalised | +0.59 | 0.0080 % | **13.83 %** | 3.7× | 0.44 |
+| **z130** | **−0.10** | 0.1348 % | **0.26 %** | **1.0×** | 0.44 |
+| z65 | +0.13 | 0.3446 % | 0.57 % | 1.0× | 0.30 |
+
+So z130 is preferred on brightness invariance and worst-case specificity, at the cost of a
+17× higher false-positive floor, and is **not** better at tracking burden. That is a
+narrower claim than the one this ADR replaces.
+
+Also corrected here: the between/within variance ratio of **7.4** reported in
+`RESPONSE_to_independent_assessment.md` §4 was `(SD of animal means)² ÷ (median
+within-animal SD)²`, which is not a variance-component estimator. The proper one-way
+random-effects estimate on the fixed denominator is between 0.077 pp², within 0.019 pp²,
+**ratio 4.0, ICC 0.80** — and it is not analytical repeatability, since these are
+different physical sections.
+
+- Percent area quoted anywhere in this project uses the DAPI denominator. Numbers computed
+  before 2026-08-17 use the learned one and are not comparable.
+- This does not change ADR-0024's rule that never-acquired tiles are excluded — the DAPI
+  mask inherits that automatically, since NaN support is never above threshold.
+- Regional endpoints (hippocampus, isocortex) are a separate mask from atlas registration.
+  This is whole-section tissue and exists to make classifier comparison valid.
+- Still open, and unaffected by this fix: σ was selected on the metric it is reported on,
+  no human reference mask exists, and one forest seed was used.
+
+### Full record
+
+`docs/brightness_problem_briefing/FIXED_DENOMINATOR_results_2026-08-17.md`

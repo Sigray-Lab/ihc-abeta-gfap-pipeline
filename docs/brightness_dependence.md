@@ -159,3 +159,30 @@ roughly doubles it because of the padding the Gaussian requires.
 Finding established and reproduced with two independent brightness metrics. The fix is
 under test. **No Aβ percent-area number should be reported until this closes**, because
 the ranking of animals by burden is currently partly a ranking by section brightness.
+
+## 9. Update, 2026-08-17 — the fix works, the denominator did not
+
+Two things changed after the first external review and one after the second.
+
+**The σ sweep in §5 tested the wrong operation.** `localNormalization(σ, 0.0)` subtracts a
+local mean but does not divide by local variance, so it is gain-*dependent* by
+construction — verified directly: doubling input gain doubles the output at `σ_var = 0`
+and leaves it unchanged at `σ_var > 0`. Section 5's rejection therefore does not apply to
+gain-invariant normalisation, which was never run. With `σ_var` set, brightness dependence
+in the controls goes from +0.59 to −0.10.
+
+**The denominator was classifier-dependent.** `tissue = Abeta + Negative` moved with the
+classifier, by more than 5 % on 100 of 121 images, and asymmetrically between conditions.
+Replaced by a DAPI-derived mask in `src/ihc/qc/tissue_mask.py`. See ADR-0025.
+
+**One argument for the candidate did not survive that fix.** Agreement with a
+classifier-free burden anchor, which had favoured z130 (0.73 vs 0.42), equalises at 0.44
+vs 0.44 once both classifiers share a denominator. z130 remains preferred on brightness
+invariance (−0.10 vs +0.59) and worst-case specificity (0.26 % vs 13.83 %), and is not
+better at tracking burden.
+
+The §8 embargo stands. What is still missing is a human reference mask — without one,
+"removed noise" and "removed signal" cannot be told apart, and σ remains selected on the
+metric it is reported on.
+
+Full record: `docs/brightness_problem_briefing/FIXED_DENOMINATOR_results_2026-08-17.md`.

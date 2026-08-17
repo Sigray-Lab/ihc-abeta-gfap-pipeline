@@ -49,6 +49,13 @@ String ANNO_DIR = parts[3]
 String MAP_FILE = parts[4]
 String OUT_DIR  = parts[5]
 double SIGMA_VAR = parts.length > 6 ? (parts[6] as double) : 0.0
+// Optional 8th/9th args switch to a NOISE-FLOORED z-score:
+//   Z(x) = (I - localMean_sigma) / max(localStd_radius, floor)
+// The built-in localNormalization has no floor, so in flat background it divides by
+// noise and manufactures structure -- which is exactly how the gain-invariant runs
+// lost specificity. clip() supplies the floor.
+int    STD_RADIUS = parts.length > 7 ? (parts[7] as int)    : 0
+double NOISE_FLOOR = parts.length > 8 ? (parts[8] as double) : 0.0
 
 // Which annotation file belongs on which image. Read from a mapping file rather
 // than hard-coded, because that mapping IS part of the blinding key --seven rows of it
@@ -68,7 +75,10 @@ new File(MAP_FILE).eachLine { line ->
     MAP[bits[0].trim()] = bits[1].trim()
 }
 println "  mapping: ${MAP.size()} annotation file(s)"
-println "  normalisation: sigmaMean=${SIGMA}px sigmaVar=${SIGMA_VAR}px " + (SIGMA_VAR > 0 ? "(GAIN-INVARIANT)" : SIGMA > 0 ? "(mean subtraction only)" : "(none)")
+println "  normalisation: " + (STD_RADIUS > 0
+    ? "FLOORED Z-SCORE  sigmaMean=${SIGMA}px stdRadius=${STD_RADIUS}px floor=${NOISE_FLOOR} (gain-invariant + noise floor)"
+    : SIGMA_VAR > 0 ? "sigmaMean=${SIGMA}px sigmaVar=${SIGMA_VAR}px (GAIN-INVARIANT, no floor)"
+    : SIGMA > 0 ? "sigmaMean=${SIGMA}px (mean subtraction only)" : "(none)")
 
 def project = getProject()
 def byName = [:]
@@ -97,7 +107,15 @@ def feats = [MultiscaleFeature.GAUSSIAN, MultiscaleFeature.LAPLACIAN,
 def scaleOps = [1.0, 2.0, 4.0].collect { s -> ImageOps.Filters.features(feats, s, s) }
 
 def ops = []
-if (SIGMA > 0) ops << ImageOps.Normalize.localNormalization(SIGMA, SIGMA_VAR)
+if (STD_RADIUS > 0) {
+    def ident = ImageOps.Core.multiply([1.0d] as double[])
+    ops << ImageOps.Core.splitDivide(
+        ImageOps.Core.splitSubtract(ident, ImageOps.Filters.gaussianBlur(SIGMA)),
+        ImageOps.Core.sequential(ImageOps.Filters.stdDev(STD_RADIUS),
+                                 ImageOps.Core.clip(NOISE_FLOOR, 1e9d)))
+} else if (SIGMA > 0) {
+    ops << ImageOps.Normalize.localNormalization(SIGMA, SIGMA_VAR)
+}
 ops << ImageOps.Core.splitMerge(scaleOps)
 
 def op = ImageOps.buildImageDataOp(ColorTransforms.createChannelExtractor('Cy3'))
