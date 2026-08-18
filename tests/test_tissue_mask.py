@@ -126,3 +126,18 @@ def test_what_actually_breaks_the_mask_is_noise_not_scaling():
     assert tissue_mask(mild.astype(np.float32)).sum() == pytest.approx(n, rel=0.02)
     swamped = base + rng.normal(0, 400, base.shape)   # modes no longer separable
     assert tissue_mask(swamped.astype(np.float32)).sum() != pytest.approx(n, rel=0.05)
+
+
+def test_interior_missing_support_is_not_restored_as_tissue():
+    """binary_fill_holes must not convert never-acquired tiles into denominator area.
+
+    The scanner skips tile positions containing no tissue, so those pixels come back as
+    NaN. Morphological hole-filling closed over them and returned them as tissue -- 400
+    of 400 pixels on this exact synthetic case -- which silently inflated the
+    denominator. Caught by external review 2026-08-18.
+    """
+    plane = _section(brightness=200.0)
+    plane[90:110, 90:110] = np.nan          # interior never-acquired block
+    mask = tissue_mask(plane)
+    assert mask[90:110, 90:110].sum() == 0
+    assert mask.sum() > 0                   # the rest of the tissue survives

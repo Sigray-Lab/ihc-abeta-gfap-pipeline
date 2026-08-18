@@ -180,6 +180,13 @@ turns legitimate progress into a red build — which teaches people to ignore re
 - **Percent-area denominator:** anatomical ROI ∩ acquired support ∩ tissue − artefact.
   Every component is exported separately so an alternative denominator can be recomputed
   without re-running segmentation.
+- **The numerator is measured inside that same region, not on the image frame.** This
+  looks too obvious to state, which is exactly why it went wrong: the evaluators measured
+  the classifier over the whole rectangle and divided by tissue area, and it survived two
+  internal review rounds before an external reviewer caught it. On one control section
+  96 % of the locally-normalised classifier's "amyloid" was glass. Measurement region is
+  supplied by `scripts/make_tissue_rois.py` and enforced by `eval_v4.groovy`, which fails
+  rather than returning zero. **ADR-0029.**
 - **One frozen classifier per marker**, applied identically everywhere, released only
   after validation stratified by region and burden.
 - **Classifier input channels are isolated:** the Aβ classifier may not use the GFAP

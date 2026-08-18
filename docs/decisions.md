@@ -1272,3 +1272,72 @@ ADR-0025 exists to fix, and that claim needs no repeat-pair argument. The orderi
 classifier conclusion is unchanged and now rests on an external anchor rather than internal
 metrics: published relative plaque area for App^NL-G-F is ~1.2–1.5 % at 7 months, the
 gain-invariant classifier reports 1.52 %, and the unnormalised classifiers report 5–50 %.
+
+---
+
+## ADR-0029 — Percent area is measured inside the DAPI mask, not on the whole frame
+
+**Date:** 2026-08-18 · **Status:** accepted · **Amends ADR-0025**
+
+### Context
+
+External adversarial review found a stop-level defect. ADR-0025 replaced the
+classifier-derived denominator with a DAPI mask, and stopped there. The **numerator was
+never intersected with that mask.** `eval_v2.groovy` and `eval_v3.groovy` called
+`createFullImageAnnotation`, measuring the classifier over the whole rectangular frame,
+and the analysis then divided by DAPI tissue area. The endpoint computed was
+
+    100 x (Abeta anywhere in the frame) / (DAPI tissue area)
+
+Numerator and denominator referred to different regions, so it was not a percent area of
+anything.
+
+**Verified, and far worse for the normalised classifier than for the others.** Classified
+area (`Abeta + Negative`) divided by DAPI tissue area:
+
+| classifier | median | above 1.0 |
+|---|---|---|
+| every unnormalised variant | 0.89 – 0.97 | 0–6 % |
+| **`v2_z130_s1`** | **1.169** (1.064–1.385) | **100 %** |
+
+Measured directly on one control section by evaluating in-tissue and full-frame separately:
+
+| | Aβ in tissue | Aβ full frame | Aβ **outside** tissue |
+|---|---|---|---|
+| `v2_nonorm_s1` | 9 980 µm² | 10 750 µm² | 771 µm² (7 %) |
+| **`v2_z130_s1`** | **24 527 µm²** | **673 321 µm²** | **648 794 µm² (96 %)** |
+
+**96 % of what the locally-normalised classifier called amyloid was glass.** The old
+arithmetic reports 3.12 % on that section; measured inside tissue it is 0.11 %. A 27-fold
+inflation. The mechanism was already predicted: local variance normalisation with no
+variance floor divides flat background by its own noise and manufactures structure there.
+
+### Decision
+
+**Every measurement is made inside the DAPI tissue mask.** `scripts/make_tissue_rois.py`
+exports each section's mask as a GeoJSON annotation in full-resolution coordinates, holes
+preserved; `eval_v4.groovy` loads it and measures within it, so numerator and denominator
+are the same region by construction for every classifier.
+
+The evaluator also records **Aβ outside the tissue mask** as a QC field rather than
+discarding it. That number is what exposed this defect and it must stay visible.
+
+The evaluator **fails loudly**: a missing ROI, a missing measurement name, a percentage
+outside 0–100, or a class area exceeding the mask now raises rather than silently
+returning zero.
+
+`tissue_mask` additionally re-intersects with `np.isfinite` after morphology. Without it
+`binary_fill_holes` closed over interior never-acquired tiles and returned them as
+tissue — 400 of 400 pixels on a synthetic block — inflating the denominator (ADR-0010,
+ADR-0024). Pinned by a test.
+
+### Consequences
+
+- **Every Aβ percent-area number produced before 2026-08-18 is withdrawn**, including all
+  of ADR-0025's tables, the repeat-pair results, the `Ignore*` fractions, the
+  object-size decomposition and the literature comparison. The defect scales differently
+  per classifier, so the *ranking* is withdrawn too, not just the values.
+- The full cohort is being re-run under `eval_v4` for `v2_nonorm_s1` and `v2_z130_s1`.
+- The repeat-pair validation must be re-run the same way before any classifier is chosen.
+- z130's apparent advantage was measured on a numerator that was mostly glass. It may
+  survive correction or it may not; nothing currently establishes either.

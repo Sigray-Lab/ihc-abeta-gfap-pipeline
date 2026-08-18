@@ -187,7 +187,15 @@ def tissue_mask(plane: np.ndarray) -> np.ndarray:
         return mask
     sizes = ndi.sum(mask, labels, range(1, n + 1))
     keep = np.where(sizes > MIN_COMPONENT_FRACTION * sizes.max())[0] + 1
-    return np.isin(labels, keep)
+    mask = np.isin(labels, keep)
+
+    # Re-intersect with acquired support. `binary_fill_holes` will happily fill an
+    # interior block of never-acquired tiles and hand it back as tissue -- measured at
+    # 400 of 400 pixels on a synthetic 20x20 NaN block before this line existed. The
+    # scanner's sample mask skips tile positions with no tissue, so those pixels are
+    # missing support, not dark tissue, and they must not enter the denominator
+    # (ADR-0010, ADR-0024).
+    return mask & np.isfinite(plane)
 
 
 def measure_tissue_area(
