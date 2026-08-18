@@ -1110,3 +1110,72 @@ raw pair.
   fallback.
 - A manual-vs-atlas disagreement on unmatched extent is expected and is not evidence of a
   registration failure.
+
+---
+
+## ADR-0027 — Brightness invariance is judged on repeat acquisitions of the same tissue
+
+**Date:** 2026-08-18 · **Status:** accepted
+
+### Context
+
+Every test we had used to judge brightness dependence was confounded with biology. The
+control-brightness correlation, the dim-vs-bright split, the classifier-free anchor — all
+compare *different pieces of tissue* that differ in brightness, so a dim section really
+might have fewer plaques. That confound is why the σ choice stayed circular no matter how
+many metrics we added (ADR-0025 §5).
+
+The external review's remedy was to go back to the microscope and acquire an exposure
+ladder. **That is unnecessary: the experiment already exists in the data.**
+
+Six slides were re-imaged. For nine physical sections the manifest records an original and
+a rescan of **the same piece of tissue**, and on two of those slides the wet-lab note says
+why in as many words: *"REDO different exposure"*. Acquisition brightness differs by 1.7×
+to 34.6× with biology held exactly constant.
+
+These pairs are invisible to the measurement project by design — `use_for_measurement`
+keeps one acquisition per physical section (ADR-0019), correctly, since counting the same
+tissue twice would inflate n. `scripts/build_pair_project.py` builds a **separate
+diagnostic project** that keeps both.
+
+### Decision
+
+Brightness invariance is judged primarily on repeat-acquisition agreement. A classifier
+that measures burden must return the same number twice; one that measures brightness
+cannot.
+
+Pairs are matched on `physical_section_label` — the manifest's own record of which piece
+of tissue a series came from — never on `section_label` (on tube 51 the rescan's series
+`01` is physical section `03`) and never on dimensions.
+
+A **pre-declared quality rule, computed from raw pixels only and never from classifier
+output**, drops a pair if either member is saturated (max ≥ 65535 in tissue), low contrast
+(p99.9/background < 4), or degenerate (tissue < 5 mm², the rule already in
+`ihc.qc.tissue_mask`). Six of nine pairs survive. Both the full and clean sets are always
+reported so the rule's effect is visible.
+
+Extreme pairs (>5× brightness change) and operating-range pairs (<5×, which is what the
+measurement cohort actually spans) are reported **separately**. They answer different
+questions and pooling them would let a spectacular failure at 35× hide the size of the
+real-world error at 2×.
+
+Absolute burden is reported beside agreement, always. This is the only test here that can
+catch *over*-correction: a classifier that destroyed all signal would score perfectly on
+agreement, and is caught by both members agreeing on approximately zero.
+
+### Consequences
+
+- This supersedes the control-brightness correlation as the primary invariance evidence.
+  That metric stays as a secondary check; it is what σ was tuned on, so it cannot also be
+  the evidence that σ is right.
+- It does **not** break the circularity entirely. It is a stronger and differently
+  confounded test, not an independent one, and it says nothing about whether the plaque
+  calls are *correct* — only whether they are *reproducible*. A human plaque reference is
+  still the only thing that can answer correctness, and none exists.
+- The pairs also validate the DAPI denominator independently: DAPI brightness changes 2.1×
+  to 5.2× across them while the derived tissue area moves 0.62 % (median), 9.9 % (worst).
+  That is a repeatability measurement on identical tissue, not a tuning metric.
+- Both acquisitions of a pair must never enter a measurement together.
+- Only 6 clean pairs, 4 of them in the operating range. This is a small experiment and its
+  conclusions are correspondingly weak; it is decisive only about effects large enough to
+  show up at n = 4.

@@ -29,8 +29,9 @@ import qupath.opencv.tools.MultiscaleFeatures.MultiscaleFeature
 import qupath.process.gui.commands.ml.PixelClassifierTraining
 import qupath.lib.classifiers.pixel.PixelClassifierMetadata
 import org.bytedeco.opencv.opencv_ml.RTrees
+import static org.bytedeco.opencv.global.opencv_core.setRNGSeed
 
-// args: "<sigmaMean>,<outName>,<umPerPx>,<annotationDir>,<mappingFile>,<outputDir>[,<sigmaVar>]"
+// args: "<sigmaMean>,<outName>,<umPerPx>,<annotationDir>,<mappingFile>,<outputDir>[,<sigmaVar>[,<stdRadius>,<noiseFloor>[,<seed>]]]"
 //
 // sigmaMean and sigmaVar are in PIXELS at the working resolution.
 //   sigmaVar = 0  -> Gaussian local MEAN SUBTRACTION only. Removes an additive
@@ -56,6 +57,20 @@ double SIGMA_VAR = parts.length > 6 ? (parts[6] as double) : 0.0
 // lost specificity. clip() supplies the floor.
 int    STD_RADIUS = parts.length > 7 ? (parts[7] as int)    : 0
 double NOISE_FLOOR = parts.length > 8 ? (parts[8] as double) : 0.0
+// MEASURED 2026-08-18: this knob does nothing. RTrees bootstraps samples and
+// subsamples features per split, so a seed *should* change the forest -- but training
+// the same configuration at seed 1 and seed 2 produced byte-identical classifiers
+// (sha256 c4e837287390bf21, 3518448 bytes, both). setRNGSeed runs and is logged, yet
+// does not reach the RNG the forest draws from; cv::theRNG() is thread-local and
+// training runs on another thread.
+//
+// Kept because the empirical fact it establishes is worth having: same annotations and
+// settings give a bit-for-bit identical classifier every run. Any difference between two
+// of our classifiers is therefore caused by the setting under test, not by the draw.
+// It also means forest-realisation sensitivity cannot be probed this way -- perturb the
+// training set instead (see the *_v1files / *_noIgOnly / *_noCtrl ablations).
+// 0 = leave OpenCV's default.
+int    SEED = parts.length > 9 ? (parts[9] as int) : 0
 
 // Which annotation file belongs on which image. Read from a mapping file rather
 // than hard-coded, because that mapping IS part of the blinding key --seven rows of it
@@ -131,6 +146,12 @@ def trainData = data.getTrainData()
 def labels = data.getLabelMap()
 println "  training samples: ${trainData.getNSamples()}  features: ${trainData.getNVars()}  labels: ${labels}"
 
+if (SEED != 0) {
+    setRNGSeed(SEED)
+    println "  RNG seed: ${SEED}"
+} else {
+    println "  RNG seed: unset (OpenCV default)"
+}
 def statModel = OpenCVClassifiers.createStatModel(RTrees.class)
 statModel.train(trainData)
 
