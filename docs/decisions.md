@@ -1179,3 +1179,96 @@ agreement, and is caught by both members agreeing on approximately zero.
 - Only 6 clean pairs, 4 of them in the operating range. This is a small experiment and its
   conclusions are correspondingly weak; it is decisive only about effects large enough to
   show up at n = 4.
+
+---
+
+## ADR-0028 — Corrections after adversarial review of ADR-0025 and ADR-0027
+
+**Date:** 2026-08-18 · **Status:** accepted · **Amends ADR-0025 and ADR-0027**
+
+Eight load-bearing claims from the 2026-08-17/18 work were handed to independent sceptics
+instructed to refute them. Every finding below was re-verified directly before being
+accepted. The conclusions of ADR-0025 and ADR-0027 stand; several of their stated *reasons*
+do not.
+
+### The DAPI denominator was validated with a tautology
+
+ADR-0025 offered, as evidence the mask is sound, that it reproduces to 0.62 % across a
+2.1–5.2× DAPI brightness change on repeat acquisitions of the same tissue.
+
+**Otsu after a percentile clip is exactly equivariant under `x → a·x + b`.** The clip
+percentile maps affinely, so the clipped histogram, the threshold and the partition all map
+through unchanged. Measured: **0.000 % area change** under gains of 0.5×–10× and offsets to
++150 counts. The invariance is in fact broader — on a cleanly bimodal histogram *any*
+monotonic transform leaves the mask alone (verified for sqrt, log, x^1.7).
+
+The repeat pairs are approximately affine, so that agreement was **implied by the
+algorithm**. It is not evidence about the acquisitions. Both properties are now pinned in
+`tests/test_tissue_mask.py` so the argument cannot be re-derived from a lucky measurement.
+
+The same applies to the control/positive ratio of 0.985: controls differ from stained
+sections in the primary antibody, a Cy3 effect, and this mask reads only DAPI. It could not
+have come out otherwise.
+
+### The brightness check tested the wrong channel
+
+`fixed_denominator_report.py` called `logr(s, 'fixed_tissue_mm2')`, filling the second
+positional argument (`y`) and leaving `x` at its default `"cy3_med"`.
+
+| | published (vs Cy3) | correct (vs DAPI) |
+|---|---|---|
+| stained | −0.10 | **+0.15** |
+| controls | +0.05 | **−0.16** |
+
+Larger and opposite in sign. Neither is significant at n = 67 / 52, so the conclusion holds.
+The script now reports both, labelled.
+
+### One check that was never done, and passes
+
+A denominator differing by treatment arm would shift every percent-area in one direction.
+Per-animal tissue area, rapamycin vs control, **on the positive sections that carry the
+endpoint: ratio 0.991, p = 0.258.** (All sections 0.952, p = 0.108; negatives alone 0.919,
+p = 0.026 — one of three uncorrected tests, on sections that do not carry the endpoint.)
+
+### ADR-0027's stated basis for the pairing was wrong; the pairing is not
+
+ADR-0027 called `physical_section_label` "the manifest's own record of which piece of tissue
+a series came from". It is **computed** — `_match_rescan_to_original` does nearest-neighbour
+matching on stage X with a tolerance, discarding Y entirely.
+
+Tested properly instead, by DAPI tissue-shape similarity after registration, against a
+negative control of different sections from the same animal:
+
+| | Dice |
+|---|---|
+| **matched pairs** | **0.989 – 0.996** |
+| different sections, same animal | 0.84 median, 0.978 best |
+
+In all six clean pairs the matched Dice exceeds the best different-section comparison for
+that animal. `DerivedData/aris_v2_2026-08-18/same_tissue_check.py`.
+
+### Determinism does not remove the realisation confound
+
+ADR-0027 and `retrain.groovy` claimed that because training is deterministic, differences
+between classifiers cannot be a random draw. **That does not follow.** Determinism pins the
+RNG *stream*: a fresh JVM re-consumes the same default state, so identical input gives
+identical output. The forest is still random — the 50 trees in `v2_nonorm_s1` are
+structurally distinct. Two classifiers trained on *different* data consume that stream
+differently, so their difference still contains a realisation component. The confound is
+repeatable, not absent.
+
+### Two further corrections recorded in the audit document
+
+The affine characterisation of the pairs was read backwards (a true affine relation returns
+R² = 1.000000 from that fit; the observed 0.91–0.98 argues *against* pure affinity), and the
+annotation audit quoted section medians as per-stroke ranges (per stroke the classes
+overlap, and one section of eight inverts). Both corrected in
+`docs/brightness_problem_briefing/ARIS_v2_delivery_audit_2026-08-18.md` §12.
+
+### What is unchanged
+
+The mask is classifier-independent, which is the entire defect in `Abeta + Negative` that
+ADR-0025 exists to fix, and that claim needs no repeat-pair argument. The ordering of the
+classifier conclusion is unchanged and now rests on an external anchor rather than internal
+metrics: published relative plaque area for App^NL-G-F is ~1.2–1.5 % at 7 months, the
+gain-invariant classifier reports 1.52 %, and the unnormalised classifiers report 5–50 %.

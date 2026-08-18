@@ -79,3 +79,50 @@ def test_never_acquired_support_is_not_tissue():
 def test_empty_plane_returns_empty_mask():
     plane = np.full((50, 50), np.nan, dtype=np.float32)
     assert tissue_mask(plane).sum() == 0
+
+
+def test_mask_is_exactly_invariant_to_gain_and_offset():
+    """Pins the property that makes the repeat-pair agreement *not* independent evidence.
+
+    Otsu after a percentile clip is exactly equivariant under ``x -> a*x + b``: the clip
+    percentile maps affinely, so the clipped histogram, the threshold and the partition
+    all map through unchanged. This is a genuine strength -- the denominator cannot drift
+    with exposure -- but it also means a repeat-acquisition test on affinely-related
+    images cannot fail, and must not be quoted as validation. Documented in the module
+    docstring; pinned here so nobody re-derives that argument from a lucky measurement.
+    """
+    base = _section(brightness=200.0)
+    n = tissue_mask(base).sum()
+    for a, b in [(0.5, 0.0), (2.0, 0.0), (10.0, 0.0), (1.0, 100.0), (6.0, 120.0)]:
+        assert tissue_mask((base * a + b).astype(np.float32)).sum() == n
+
+
+def test_invariance_is_broader_than_affine_on_a_bimodal_histogram():
+    """Any monotonic transform, not just affine, leaves a clean two-mode mask alone.
+
+    Otsu picks a threshold between the modes; a monotonic map moves the modes and the
+    threshold together, so the partition survives. This is why the repeat-acquisition
+    agreement has even less evidential value than the affine argument alone implies.
+    """
+    base = _section(brightness=200.0)
+    n = tissue_mask(base).sum()
+    for f in (np.sqrt, np.log1p, lambda x: x ** 1.7):
+        assert tissue_mask((f(np.maximum(base, 0)) * 20.0).astype(np.float32)).sum() == n
+
+
+def test_what_actually_breaks_the_mask_is_noise_not_scaling():
+    """Rescaling cannot move this mask; degrading the separation can.
+
+    Worth pinning because it bounds what a repeat-acquisition test can ever detect. Two
+    acquisitions that differ in exposure produce the same mask by construction. Only a
+    change that erodes the tissue/glass separation -- read noise at very low exposure,
+    stray light, saturation merging the modes -- moves it. So the mask's stability across
+    the rescan pairs is a statement about the algorithm, not about the acquisitions.
+    """
+    rng = np.random.default_rng(0)
+    base = _section(brightness=200.0)          # glass 5, tissue 200: cleanly separated
+    n = tissue_mask(base).sum()
+    mild = base + rng.normal(0, 5, base.shape)
+    assert tissue_mask(mild.astype(np.float32)).sum() == pytest.approx(n, rel=0.02)
+    swamped = base + rng.normal(0, 400, base.shape)   # modes no longer separable
+    assert tissue_mask(swamped.astype(np.float32)).sum() != pytest.approx(n, rel=0.05)

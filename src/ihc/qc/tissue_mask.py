@@ -35,22 +35,60 @@ cell, Otsu on DAPI segments nuclei rather than tissue):
 Each step earns its place, and two of them were added only after a version without
 them failed a validation check. Details in the functions below.
 
-What it must satisfy
---------------------
-A denominator that is itself brightness-dependent reintroduces the problem it was
-built to remove, so this mask is validated, not assumed. Measured over this cohort:
+What is established, and what only looks established
+----------------------------------------------------
+Corrected 2026-08-18 after adversarial review. The original version of this block
+presented four numbers as validation. Two of them are consequences of the algorithm
+rather than measurements, and one was computed against the wrong channel.
+
+**True by construction, not by measurement.** Otsu after a percentile clip is
+*exactly* equivariant under ``x -> a*x + b``: the clip percentile maps affinely, so
+the clipped histogram, the optimal threshold and the resulting partition all map
+through unchanged. Measured area change under gains of 0.5x-10x and offsets to +150
+counts: **0.000%, every time.**
+
+The invariance is in fact broader than affine. Whenever the tissue/glass histogram is
+cleanly bimodal, *any* monotonic transform moves the modes and the threshold together
+and leaves the partition alone -- verified for sqrt, log and x**1.7, and for
+saturation that does not merge the modes. What does move it is anything that erodes
+the separation itself: read noise at very low exposure, stray light, saturation that
+swallows both modes. Both properties are pinned in ``tests/test_tissue_mask.py``.
+
+Two consequences:
+
+* The repeat-acquisition agreement (0.62% median across a 2.1-5.2x DAPI brightness
+  change) is largely *implied*, because those pairs are approximately affine. What
+  that test really probes is the non-affine residual -- a real thing, and the mask
+  passes, but a much weaker claim than "validated on identical tissue".
+* The control/positive ratio of 0.985 is likewise forced. Control sections differ
+  from stained ones in the primary antibody, which is a Cy3 effect, and this mask
+  reads only DAPI. It could not have come out otherwise.
+
+**Genuinely measured.**
 
 ===============================================  =========  ==============
 property                                         want       measured
 ===============================================  =========  ==============
 median area vs atlas hemisphere (22.13 mm^2)     close      21.2 mm^2
-correlation with section brightness, stained     ~0         -0.10
-correlation with section brightness, controls    ~0         +0.05
-control/positive area ratio within animal        ~1.0       0.985
+correlation with **DAPI** brightness, stained    ~0         +0.15
+correlation with **DAPI** brightness, controls   ~0         -0.16
+tissue area, rapamycin vs control (positives)    ~1.0       0.991 (p=0.26)
 ===============================================  =========  ==============
 
-The last row is the one that matters most: it is the specific asymmetry that made
-the learned denominator unusable, and it is gone.
+The two correlations were previously published as -0.10 and +0.05. Those were
+computed against **Cy3** median -- a channel this mask never reads -- because
+``fixed_denominator_report.py`` passed the area as the second positional argument
+and left ``x`` at its default. Recomputed against DAPI they are larger and of
+opposite sign. Neither reaches significance at n = 67 / 52, so the conclusion stands,
+but the original check tested the wrong variable.
+
+The last row is new and was never previously checked: a denominator that differed by
+treatment arm would shift every percent-area in one direction. It does not, on the
+sections that carry the endpoint.
+
+**What remains genuinely load-bearing:** this mask is classifier-independent. Nothing
+here reads a classifier output, which is the defect in ``Abeta + Negative`` that
+ADR-0025 exists to fix. Claim that, and no more.
 
 Scope
 -----
