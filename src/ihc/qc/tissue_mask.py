@@ -72,7 +72,7 @@ property                                         want       measured
 median area vs atlas hemisphere (22.13 mm^2)     close      21.2 mm^2
 correlation with **DAPI** brightness, stained    ~0         +0.15
 correlation with **DAPI** brightness, controls   ~0         -0.16
-tissue area, rapamycin vs control (positives)    ~1.0       0.991 (p=0.26)
+tissue area, rapamycin vs control (positives)    ~1.0       0.916 (p=0.015)
 ===============================================  =========  ==============
 
 The two correlations were previously published as -0.10 and +0.05. Those were
@@ -82,9 +82,12 @@ and left ``x`` at its default. Recomputed against DAPI they are larger and of
 opposite sign. Neither reaches significance at n = 67 / 52, so the conclusion stands,
 but the original check tested the wrong variable.
 
-The last row is new and was never previously checked: a denominator that differed by
-treatment arm would shift every percent-area in one direction. It does not, on the
-sections that carry the endpoint.
+The last row is **not** reassuring and an earlier version of this block misreported it.
+It was first computed over all 121 masks, including two that failed outright, and came
+out at 0.991 (p = 0.26). On the 119 sections that actually carry the endpoint it is
+**0.916, p = 0.0146** -- tissue area differs by treatment arm. That may reflect coronal
+level, damage or cropping rather than biology, but it is not nothing, and a denominator
+that differs by arm shifts every percent-area in one direction. External review round 2.
 
 **What remains genuinely load-bearing:** this mask is classifier-independent. Nothing
 here reads a classifier output, which is the defect in ``Abeta + Negative`` that

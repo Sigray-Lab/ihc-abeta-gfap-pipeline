@@ -141,3 +141,31 @@ def test_interior_missing_support_is_not_restored_as_tissue():
     mask = tissue_mask(plane)
     assert mask[90:110, 90:110].sum() == 0
     assert mask.sum() > 0                   # the rest of the tissue survives
+
+
+def test_vectoriser_keeps_a_four_vertex_rectangle_and_its_holes():
+    """A ring must be judged by area, not by how many corners it happens to have.
+
+    CHAIN_APPROX_SIMPLE reduces a rectangle to four points, so the previous
+    twelve-vertex threshold discarded large simple shapes outright -- a plain 160x160
+    square exported as zero polygons, outer ring included, and a rectangular hole in
+    real tissue would have been silently returned to the denominator. External review
+    round 2, §3. It did not fire on the 2026-08-18 cohort, but only by luck of tissue
+    being irregular.
+    """
+    import importlib.util
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location(
+        "mtr", Path(__file__).resolve().parent.parent / "scripts" / "make_tissue_rois.py")
+    mtr = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mtr)
+
+    mask = np.zeros((200, 200), bool)
+    mask[20:180, 20:180] = True
+    polys = mtr.mask_to_geojson(mask, 1.0)["geometry"]["coordinates"]
+    assert len(polys) == 1, "a plain rectangle must survive vectorisation"
+
+    mask[100:140, 100:140] = False               # 40x40 rectangular hole, 4 corners
+    polys = mtr.mask_to_geojson(mask, 1.0)["geometry"]["coordinates"]
+    assert len(polys) == 1
+    assert len(polys[0]) == 2, "the hole must be preserved as an interior ring"

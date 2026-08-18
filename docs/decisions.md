@@ -1341,3 +1341,77 @@ ADR-0024). Pinned by a test.
 - The repeat-pair validation must be re-run the same way before any classifier is chosen.
 - z130's apparent advantage was measured on a numerator that was mostly glass. It may
   survive correction or it may not; nothing currently establishes either.
+
+---
+
+## ADR-0030 — QC rules are enforced, not merely printed
+
+**Date:** 2026-08-18 · **Status:** accepted · **Amends ADR-0029**
+
+### Context
+
+External adversarial review, round 2. The endpoint-support fix of ADR-0029 held up, but the
+surrounding measurement carried four defects. All were re-verified before acceptance.
+
+**The endpoint column was mislabelled.** `eval_in_tissue.groovy` exported QuPath's
+`Abeta %`, which is `Abeta/(Abeta + Negative)` because `Ignore*` is excluded from QuPath's
+area percentages — not Aβ over tissue. Measured: it matches that formula on 99.2 % of rows,
+**149 of 242 differ from the real endpoint, worst by 59.93 points** (`Y13_s01` reads 86.39 %
+against a true 26.47 %). The downstream report recomputed correctly so published figures were
+unaffected, but the archived file carried a column whose name was a trap.
+
+**Classifier collapse was being scored as perfect specificity.** Four unnormalised control
+sections assign essentially the whole mask to `Ignore*` — `A09_s01` covers **0.000000 %** —
+and the resulting `Aβ/tissue = 0` was recorded as a clean zero. The unnormalised
+classifier's apparent specificity advantage rested partly on sections where it measured
+nothing.
+
+**Two failed masks were flagged but not excluded**, pulling animal Y13 from 2.54 % to 1.27 %.
+
+**Animal summaries were unweighted means of section percentages**, contrary to D-7.
+
+### Decision
+
+- The endpoint is **`abeta_pct_of_tissue_roi`**. QuPath's value is exported as
+  **`abeta_pct_of_nonignored`** and is never consumed downstream.
+- `ignore_in_um2`, `classified_coverage` and a `qc_status` of `OK`/`LOW_COVERAGE`/`COLLAPSED`
+  are exported on every row. Coverage below 1 % is a **failed measurement**, never a zero.
+- The `< 5 mm²` mask rule is **executed**, not printed. Failed masks leave the endpoint.
+- Animal summaries are **area-weighted**, Σ Aβ area / Σ valid tissue (D-7).
+- Ring rejection in `make_tissue_rois.py` is by **area**, not vertex count. The previous
+  12-vertex rule discarded a plain rectangle outright — verified, a 160 × 160 px square
+  exported zero polygons. Pinned by a test.
+
+### Consequences
+
+Enforcing the rules changes 234 of 242 rows to valid (119 of 121 sections) and produces the
+first separation statistic:
+
+| | control max | stained min | separated |
+|---|---|---|---|
+| `v2_nonorm_s1` | 1.988 % | 0.447 % | **no — they overlap** |
+| `v2_z130_s1` | 0.246 % | 1.213 % | **yes, completely** |
+
+Area-weighted per animal (D-7), stained sections:
+
+| classifier | arm | median | range | spread |
+|---|---|---|---|---|
+| `v2_nonorm_s1` | diet | 5.459 % | 1.529–17.482 | 11.44× |
+| `v2_nonorm_s1` | ip | 15.306 % | 3.144–31.329 | 9.97× |
+| **`v2_z130_s1`** | diet | **1.971 %** | 1.400–2.437 | **1.74×** |
+| **`v2_z130_s1`** | ip | **2.731 %** | 1.596–2.966 | **1.86×** |
+
+Removing the four collapsed sections lowers the unnormalised control brightness correlation
+from +0.82 to **+0.73** — still strong, and no longer flattered by abstentions.
+
+**The vectoriser defect did not corrupt the 2026-08-18 run.** All 121 ROIs exported 1–4
+polygons, and on the 15 images with never-acquired tiles **none of those pixels are enclosed
+by tissue** (0 of 4387 on `C18_s01`, 0 of 3995 on `Q07_s01`), so there were no interior holes
+to lose. ADR-0024's finding — the scanner skips only tissue-free positions — is why.
+
+**Endpoint name, until D-3 is decided:** *classifier-positive 82E1 area / DAPI-defined
+whole-section area, before independent artefact exclusion.* Not validated plaque burden.
+
+Still open and not addressed here: independent artefact mask (D-2), Cy3 valid support, hole
+and ventricle policy, z130 seam/edge/variance-floor QC, resolution sweep, rescan-to-all
+matching, leave-one-animal-out repeats, and the human reference.

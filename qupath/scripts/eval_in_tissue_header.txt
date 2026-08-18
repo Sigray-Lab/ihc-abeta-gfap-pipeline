@@ -1,0 +1,1 @@
+image,classifier,abeta_pct_of_tissue_roi,abeta_pct_of_nonignored,abeta_in_um2,negative_in_um2,ignore_in_um2,tissue_roi_um2,classified_coverage,qc_status,abeta_full_frame_um2,negative_full_frame_um2,frame_um2,abeta_outside_tissue_um2

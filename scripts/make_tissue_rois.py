@@ -42,7 +42,14 @@ from ihc.qc.stain_check import CH_DAPI, read_pyramid_plane  # noqa: E402
 from ihc.qc.tissue_mask import tissue_mask  # noqa: E402
 from ihc.util.config import load_paths  # noqa: E402
 
-MIN_RING_PX = 12  # drop contours too small to be a real polygon at mask resolution
+# Reject rings by AREA, never by vertex count. CHAIN_APPROX_SIMPLE reduces a rectangle to
+# four corners, so a vertex threshold discards large simple shapes -- verified: a plain
+# 160x160 px square exported as zero polygons under the previous 12-vertex rule, outer ring
+# included. It did not corrupt the 2026-08-18 run (all 121 ROIs exported 1-4 polygons, and
+# the never-acquired tiles in 15 images are all outside the tissue outline, so there were no
+# interior holes to lose) but the rule was unsafe. External review round 2, §3.
+MIN_RING_AREA_PX = 4.0    # a ring smaller than this cannot represent real support
+MIN_RING_VERTICES = 4     # a polygon needs three distinct corners plus closure
 
 
 def mask_to_geojson(mask: np.ndarray, scale: float, name: str = "Tissue") -> dict:
@@ -56,14 +63,18 @@ def mask_to_geojson(mask: np.ndarray, scale: float, name: str = "Tissue") -> dic
     polys: list[list] = []
     if hierarchy is not None:
         hierarchy = hierarchy[0]
+        def keep(ring) -> bool:
+            return (len(ring) >= MIN_RING_VERTICES
+                    and cv2.contourArea(ring) >= MIN_RING_AREA_PX)
+
         for i, c in enumerate(contours):
-            if hierarchy[i][3] != -1 or len(c) < MIN_RING_PX:
+            if hierarchy[i][3] != -1 or not keep(c):
                 continue                                    # child ring, handled below
             rings = [(c[:, 0, :] * scale).tolist()]
             child = hierarchy[i][2]
             while child != -1:
                 h = contours[child]
-                if len(h) >= MIN_RING_PX:
+                if keep(h):
                     rings.append((h[:, 0, :] * scale).tolist())
                 child = hierarchy[child][0]
             for r in rings:

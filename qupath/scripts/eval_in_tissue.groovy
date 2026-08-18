@@ -43,7 +43,14 @@ selectObjects([tissue])
 addPixelClassifierMeasurements(classifier, 'T')
 double abetaIn = meas(tissue, 'Abeta area')
 double negIn   = meas(tissue, 'Negative area')
-double pctIn   = meas(tissue, 'Abeta %')
+// QuPath's "Abeta %" is Abeta/(Abeta+Negative) -- Ignore* is excluded from its area
+// percentages by design. It is NOT Abeta over tissue, and naming it as though it were
+// made 149 of 242 rows misleading, the worst by 59.9 points. Export it under a name that
+// says what it is, and compute the real endpoint here rather than downstream.
+double pctNonIgnored = meas(tissue, 'Abeta %')
+double pctOfTissue   = 100.0d * abetaIn / tissueUm2
+double ignoreIn      = Math.max(tissueUm2 - abetaIn - negIn, 0d)
+double coverage      = (abetaIn + negIn) / tissueUm2
 
 // ---- 2. full frame, for the out-of-tissue QC field ------------------------------
 removeAllObjects()
@@ -60,14 +67,19 @@ double negAll   = meas(frame, 'Negative area')
 // failure on that image. That is data, not a crash: record it as NaN so it appears in
 // the results and is counted, rather than vanishing. Only a real number outside 0-100
 // indicates a broken measurement.
-boolean degenerate = (abetaIn + negIn) <= 0d
-if (!degenerate && (pctIn < -0.001 || pctIn > 100.001))
-    throw new RuntimeException("Abeta % outside 0-100 on ${name}/${C}: ${pctIn}")
-if (degenerate) pctIn = Double.NaN
-if (abetaIn > tissueUm2 * 1.001 || negIn > tissueUm2 * 1.001)
-    throw new RuntimeException("class area exceeds tissue on ${name}/${C}")
+// Coverage is the honest QC field: if the classifier assigned nearly the whole mask to
+// Ignore* it measured nothing, and that must not be recorded as "found no Abeta". Four
+// unnormalised control sections abstained on >99.9% of tissue and were being scored as
+// perfect specificity. External review round 2, §5.
+String status = "OK"
+if (coverage < 0.01d)      status = "COLLAPSED"
+else if (coverage < 0.50d) status = "LOW_COVERAGE"
+if (!Double.isFinite(pctOfTissue) || pctOfTissue < -0.001d || pctOfTissue > 100.001d)
+    throw new RuntimeException("Abeta % of tissue outside 0-100 on ${name}/${C}: ${pctOfTissue}")
+if (abetaIn + negIn > tissueUm2 * 1.001d)
+    throw new RuntimeException("classes exceed the tissue mask on ${name}/${C}")
 
-new File(OUT).append(String.format("%s,%s,%.6f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f%n",
-   name, C, pctIn, abetaIn, negIn, tissueUm2, abetaAll, negAll, frameUm2,
-   Math.max(abetaAll - abetaIn, 0d)))
+new File(OUT).append(String.format("%s,%s,%.6f,%.6f,%.1f,%.1f,%.1f,%.1f,%.6f,%s,%.1f,%.1f,%.1f,%.1f%n",
+   name, C, pctOfTissue, pctNonIgnored, abetaIn, negIn, ignoreIn, tissueUm2, coverage, status,
+   abetaAll, negAll, frameUm2, Math.max(abetaAll - abetaIn, 0d)))
 removeAllObjects()
