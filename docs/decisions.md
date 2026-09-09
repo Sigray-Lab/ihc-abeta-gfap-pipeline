@@ -1606,3 +1606,67 @@ settle it is to inject *textured* patches (real plaque texture, scaled) rather t
 cheap, same machinery. Until then every write-up states that broad, smooth immunoreactivity is
 not measured by any arm, and the human reference boxes (which include diffuse deposits) remain
 the arbiter of what the endpoint actually captures.
+
+## ADR-0036 — Machine-drawn control negatives (v5): the classifier can only lose the control false positives by losing the small deposits; v4 stays the working GLOBAL model
+
+**Context.** Under v4 the worst secondary-only control reads 2.86 % (median 0.25 %) against a
+stained median of 5.47 %. Its false positives are section rims, autofluorescent cell bodies,
+vessel walls and debris. Six controls that had never been used for training (W12_s03, J21_s02,
+J01_s01, G22_s02, D19_s02, G09_s04) were given machine-drawn annotations by
+`scripts/make_auto_negatives.py`: the largest v4 false-positive objects as `Negative` (or
+`Ignore*` when within 20 µm of the tissue edge) plus twelve 30-µm `Negative` strokes each.
+The first retrain pooled 103,579 samples: 4,103–27,136 per machine-drawn file against 4,782
+from all twelve of Aris's files together, because QuPath samples every pixel under a polygon
+whereas Aris's annotations are 172 short lines (median 12 µm). A per-file cap was added to
+`scripts/retrain_global.groovy` (optional 7th argument; 700 samples per `*_auto` file, split
+evenly over its classes, fixed seed) so the six files contribute 4,200 samples; pooled 8,982.
+The uncapped model is kept as `v5_uncapped_global.json` and was not evaluated.
+
+**Result, capped v5 against v4 (same 121 sections, same tissue ROIs).**
+
+| | v4 | capped v5 |
+|---|---|---|
+| stained median (n=67) | 5.47 % [0.71–26.64] | 1.07 % [0.13–6.21] |
+| controls max / median (n=52) | 2.857 % / 0.251 % | 0.262 % / 0.004 % |
+| untrained controls max (n=46) | 2.857 % | 0.262 % |
+| brightness Spearman, stained / controls | −0.06 / −0.43 | −0.03 / −0.18 |
+| hippocampus diet, rapa/ctrl median ratio, MWU p | 0.579, 0.020 | 0.650, 0.109 |
+| hippocampus ip | 1.283, 0.66 | 1.545, 0.66 |
+| recall on Aris's Abeta strokes (in-sample) | 98 % | 97 % |
+
+Section ranking is preserved (Spearman +0.97 across stained sections) but every one of the 67
+stained sections fell by more than half (median ratio 0.20). Where the area went, measured as
+the fraction of each v4 object that survives in v5 (V02_s01 and W23_s04): objects below
+500 µm² are 98–99 % lost; 500–2,000 µm² objects keep 10–12 % of their area; objects above
+2,000 µm² keep 23–27 %, i.e. their cores. On the control A09_s02, 94.5 % of the v4
+false-positive area is removed; what remains are small puncta of the same appearance as the
+small deposits lost on the stained sections. Overlays are in
+`DerivedData/v5_capped_negatives_2026-09-09/png/`.
+
+**Reading.** The hard negatives are, by construction, the objects most similar to Aβ in the
+twelve texture features, and there is no Cy3-only pixel feature that separates a bright
+punctum on a control from a small deposit on a stained section: the difference is the
+section's antibody status, which is not a property of the pixel. Training against them can
+only move the decision boundary towards the plaque core. Aris's own labels are still fitted
+(recall 97 %), so the added negatives did not override them; the loss is entirely in
+unlabelled territory, and it is not a sample-count problem, since the cap did not prevent it.
+The control false-positive rate therefore has to be handled outside the classifier: reported
+alongside the stained values as the floor, and reduced by rules that apply identically to
+stained and control sections. One such rule is quantified here: 36–81 % of the v4
+false-positive area on seven controls lies within 20 µm of the tissue edge, against 2–8 % of
+the Aβ area on two stained sections, so eroding the measurement ROI by 20 µm would remove
+roughly half of the control ceiling deterministically. Not implemented; PI decision.
+
+**Decision.** `v4_global` and its `gx_*` copies remain the working GLOBAL model. `v5_global`,
+`v5_uncapped_global` and the `g5_*` copies stay on disk for the record and are not used.
+The machine-drawn files and `training_annotation_map_v5.csv` are kept; a retrain from
+`combined_v5` without them reproduces v4. Outputs and scripts:
+`DerivedData/v5_capped_negatives_2026-09-09/`.
+
+**Reproduce.**
+```
+QuPath script -p <project> -i A08_s01 --args "v5_global,1.3,<combined_v5>,<map_v5>,<anchors>,<outDir>,700" scripts/retrain_global.groovy
+python3 scripts/make_global_classifiers.py --classifier v5_global --anchors DerivedData/aris_v2_2026-08-18/global_norm_anchors.csv --prefix g5
+scripts/run_eval_batch.sh 4 ~/ihc_work/tissue_rois 'g5_{image}' ~/ihc_work/eval_20260909/tissue_GLOBAL_v5.csv
+scripts/run_eval_batch.sh 4 ~/ihc_work/region_rois/Hippocampus 'g5_{image}' ~/ihc_work/eval_20260909/region_Hippocampus_GLOBAL_v5.csv Hippocampus
+```

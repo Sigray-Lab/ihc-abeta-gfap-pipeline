@@ -1,7 +1,9 @@
 /*
  * retrain_global.groovy — third arm: ONE offset and ONE gain per section.
  *
- *   QuPath script -p <project> -i <any one image> --args "<outName>,<umPerPx>,<annoDir>,<mapFile>,<anchorCsv>,<outDir>"
+ *   QuPath script -p <project> -i <any one image> --args "<outName>,<umPerPx>,<annoDir>,<mapFile>,<anchorCsv>,<outDir>[,<autoCap>]"
+ *   autoCap (optional): max training samples per machine-drawn *_auto file, split evenly over its
+ *   classes (v5 used 700, so six auto files add ~4,200 against ~4,800 hand-drawn; 0/omitted = no cap)
  *   (-i is required: without it QuPath runs a project script once PER IMAGE, i.e. 121 trainings)
  *
  * Why this exists. Exposure is constant across the endpoint set (1840 ms on all 67
@@ -39,6 +41,7 @@ import qupath.lib.classifiers.pixel.PixelClassifierMetadata
 import org.bytedeco.opencv.opencv_ml.RTrees
 import org.bytedeco.opencv.opencv_ml.TrainData
 import org.bytedeco.opencv.opencv_core.Mat
+import org.bytedeco.opencv.opencv_core.MatVector
 import static org.bytedeco.opencv.global.opencv_core.vconcat
 import static org.bytedeco.opencv.global.opencv_ml.ROW_SAMPLE
 import org.bytedeco.javacpp.indexer.IntIndexer
@@ -54,6 +57,10 @@ String ANNO = parts[2]
 String MAPF = parts[3]
 String ANCH = parts[4]
 String ODIR = parts[5]
+// optional 7th arg: cap on samples per MACHINE-DRAWN file (stem ending in _auto), split evenly
+// across its classes. QuPath samples every pixel of a polygon, so six auto-drawn control files
+// contributed ~99,000 samples against ~4,800 hand-drawn ones (2026-09-09). 0 = no cap.
+int AUTO_CAP = parts.length > 6 ? (parts[6] as int) : 0
 
 def MAP = [:]
 new File(MAPF).eachLine { l ->
@@ -146,11 +153,13 @@ new File(ANNO).listFiles().sort{ it.name }.each { f ->
     }
     def X = td.getSamples(), Y = td.getResponses()
     int changed = 0
+    int[] lab = new int[Y.rows()]
     if (Y.depth() == CV_32S) {
         IntIndexer yi = Y.createIndexer()
         for (long i = 0; i < Y.rows(); i++) {
             int v = yi.get(i, 0L); int nv = remap[v]
             if (nv != v) { yi.put(i, 0L, nv); changed++ }
+            lab[(int) i] = nv
         }
         yi.release()
     } else if (Y.depth() == CV_32F) {
@@ -158,6 +167,7 @@ new File(ANNO).listFiles().sort{ it.name }.each { f ->
         for (long i = 0; i < Y.rows(); i++) {
             int v = Math.round(yf.get(i, 0L)); int nv = remap[v]
             if (nv != v) { yf.put(i, 0L, (float) nv); changed++ }
+            lab[(int) i] = nv
         }
         yf.release()
     } else {
@@ -165,6 +175,20 @@ new File(ANNO).listFiles().sort{ it.name }.each { f ->
     }
     println "  LABELS ${src}: image map=${lm} -> canonical ${CANON}; remapped ${changed} of ${Y.rows()} samples"
     labelMap = CANON
+    if (AUTO_CAP > 0 && src.endsWith('_auto')) {
+        def rnd = new Random(20260909L + nImg)
+        def byCls = [:].withDefault { [] }
+        for (int i = 0; i < lab.length; i++) byCls[lab[i]] << i
+        int perClass = Math.max(1, (AUTO_CAP / byCls.size()) as int)
+        def keep = []
+        byCls.each { c, idx -> Collections.shuffle(idx, rnd); keep.addAll(idx.take(perClass)) }
+        keep.sort()
+        def xs = new MatVector(), ys = new MatVector()
+        keep.each { int i -> xs.push_back(X.row(i)); ys.push_back(Y.row(i)) }
+        def X2 = new Mat(), Y2 = new Mat(); vconcat(xs, X2); vconcat(ys, Y2)
+        println "  CAP ${src}: kept ${keep.size()} of ${Y.rows()} samples (${perClass} per class, ${byCls.size()} classes)"
+        X = X2; Y = Y2
+    }
     if (allX == null) { allX = X; allY = Y }
     else {
         def nx = new Mat(); vconcat(allX, X, nx); allX = nx
