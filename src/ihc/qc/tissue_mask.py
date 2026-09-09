@@ -192,6 +192,18 @@ def tissue_mask(plane: np.ndarray) -> np.ndarray:
     keep = np.where(sizes > MIN_COMPONENT_FRACTION * sizes.max())[0] + 1
     mask = np.isin(labels, keep)
 
+    # NOTE (2026-08-19): this re-intersection covers NEVER-ACQUIRED (NaN) support only.
+    # Enclosed *finite* background -- ventricles, tears, the interior of a fold -- is filled
+    # by `binary_fill_holes` above and DOES enter the denominator as tissue. Measured across
+    # the 2026-08-18 cohort: zero interior rings in all 121 exported ROIs, i.e. not one
+    # ventricle or tear is excluded anywhere, worth ~2.56% of the denominator. Two documents
+    # claimed otherwise (make_tissue_rois.py's docstring, and the tube-37 note in
+    # config/section_notes.csv); both were wrong and are corrected. Whether to keep filling
+    # is a live decision (D-2 artefact mask is PENDING_PI_DECISION) -- but the current
+    # behaviour is "fill everything", and that must be stated rather than assumed away.
+    # Note also that the affine-equivariance guarantee in this module's docstring covers the
+    # THRESHOLD, not the closing/fill steps.
+    #
     # Re-intersect with acquired support. `binary_fill_holes` will happily fill an
     # interior block of never-acquired tiles and hand it back as tissue -- measured at
     # 400 of 400 pixels on a synthetic 20x20 NaN block before this line existed. The

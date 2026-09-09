@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pandas as pd
 
-HEADER = ("tube_id", "group", "slide_number_depth_index", "positive_box", "n_sections",
+HEADER = ("tube_id", "slide_number_depth_index", "positive_box", "n_sections",
           "no_negative_control", "annotation", "image_crosscheck", "needs_confirmation")
 BOXES = {"near_label", "far_label", "both"}
 THREE_SECTION_TUBES = {30, 33, 34, 42, 53, 54}   # verified from the payloads

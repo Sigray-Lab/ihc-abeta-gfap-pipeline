@@ -64,6 +64,40 @@ def fit_rigid(fixed: np.ndarray, moving: np.ndarray):
     return best
 
 
+def forward_matrix_xy(ang_deg: float, dy: float, dx: float, h: int, w: int, scale: float) -> np.ndarray:
+    """3x3 homogeneous matrix, in FULL-RESOLUTION (x, y) pixel coordinates, of the forward
+    model fitted by :func:`fit_rigid`, which maps RESCAN coordinates onto ORIGINAL ones:
+
+        rot   = ndi.rotate(moving, ang, reshape=False)   # about the coarse array centre
+        moved = ndi.shift(rot, (dy, dx))
+
+    scipy rotates the (row, col) plane with the matrix R = [[c, s], [-s, c]] applied
+    output->input about the centre ((h-1)/2, (w-1)/2), so a source point p lands at
+    o = R^T (p - centre) + centre, and the shift then adds (dy, dx). Everything is linear,
+    so scaling coarse -> full resolution commutes with the rotation. The convention is
+    pinned by tests/test_rescan_transform.py against scipy itself; do not "fix" a sign here
+    without that test.
+    """
+    th = np.deg2rad(ang_deg); c, s = np.cos(th), np.sin(th)
+    cx, cy = (w - 1) / 2 * scale, (h - 1) / 2 * scale
+    # (row, col): o_r = c*(p_r-cy) - s*(p_c-cx) + cy + dy*scale ; o_c = s*(p_r-cy) + c*(p_c-cx) + cx + dx*scale
+    # rewritten for (x, y) = (col, row):
+    return np.array([[c,  s, cx - c * cx - s * cy + dx * scale],
+                     [-s, c, cy + s * cx - c * cy + dy * scale],
+                     [0,  0, 1.0]])
+
+
+def original_to_rescan_params(ang_deg: float, dy: float, dx: float, h: int, w: int, scale: float) -> list:
+    """Shapely affine parameters [a, b, d, e, xoff, yoff] taking an outline drawn on the
+    ORIGINAL scan into RESCAN coordinates: the exact inverse of :func:`forward_matrix_xy`.
+    Before 2026-09-09 this applied the forward rotation instead of its inverse (external
+    review 2026-09-09, finding F6); the saved transfers also predated the 2026-08-19 offset
+    correction. Both are now covered by the round-trip test.
+    """
+    inv = np.linalg.inv(forward_matrix_xy(ang_deg, dy, dx, h, w, scale))
+    return [inv[0, 0], inv[0, 1], inv[1, 0], inv[1, 1], inv[0, 2], inv[1, 2]]
+
+
 def _polygonal(geom):
     """Keep only the Polygon parts of a geometry.
 
@@ -143,17 +177,10 @@ def main() -> int:
         if a.dry_run or after <= before:
             continue
 
-        # invert: we fitted rescan->original, so original outlines need the inverse
-        th = np.deg2rad(ang)
-        cy, cx = (h - 1) / 2 * scale, (w - 1) / 2 * scale
-        cos, sin = np.cos(th), np.sin(th)
-        # forward (rescan->orig): rotate about centre by ang, then shift by (dy,dx)
-        # inverse (orig->rescan): shift by (-dy,-dx), then rotate about centre by -ang
+        # We fitted rescan->original, so outlines drawn on the original need the INVERSE.
+        params = original_to_rescan_params(ang, dy, dx, h, w, scale)
         def to_rescan(g):
-            g = affine_transform(g, [1, 0, 0, 1, -dx * scale, -dy * scale])
-            return affine_transform(g, [cos, sin, -sin, cos,
-                                        cx - cos * cx + sin * cy,
-                                        cy - sin * cx - cos * cy])
+            return affine_transform(g, params)
 
         d = json.loads(src.read_text())
         feats = d.get("features", d) if isinstance(d, dict) else d

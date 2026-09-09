@@ -1223,12 +1223,30 @@ positional argument (`y`) and leaving `x` at its default `"cy3_med"`.
 Larger and opposite in sign. Neither is significant at n = 67 / 52, so the conclusion holds.
 The script now reports both, labelled.
 
-### One check that was never done, and passes
+### One check that was never done — and it does NOT pass. Corrected 2026-08-19.
 
 A denominator differing by treatment arm would shift every percent-area in one direction.
-Per-animal tissue area, rapamycin vs control, **on the positive sections that carry the
-endpoint: ratio 0.991, p = 0.258.** (All sections 0.952, p = 0.108; negatives alone 0.919,
-p = 0.026 — one of three uncorrected tests, on sections that do not carry the endpoint.)
+
+**This section originally reported ratio 0.991, p = 0.258 and marked the check passed. That
+was wrong**, and it disagreed with `src/ihc/qc/tissue_mask.py`, which has carried **0.916,
+p = 0.0146** and called it "not reassuring". Recomputed independently, the module docstring
+is right and this ADR was wrong. The whole gap is two QC-failed masks (S17_s04 and Y13_s01,
+both Control IP) that the 0.991 figure included and the endpoint set excludes.
+
+Per-animal tissue area, rapamycin vs control, on the positive sections that carry the
+endpoint: **ratio 0.916, p = 0.0146** (n = 17 v 14, pooled across arms). Sensitivity without
+the two QC-failed animals: 0.929, p = 0.053. Same direction in both arms separately (diet
+0.931, IP 0.897), neither individually significant.
+
+**Caution on the pooled test:** arm is confounded with age, route and staining block, so
+pooling to gain significance is not free. Report the per-arm figures alongside it. At the
+diet-arm animal level alone the figure is 0.931 with permutation p = 0.131.
+
+Percent area is a density, so this does not mechanically bias the ratio (within-group
+correlation of pct with tissue area ≈ 0), and the same difference appears in the antibody-free
+negatives — so it is a sectioning/framing property, not a staining one. It is nonetheless a
+statement that the two groups are not contributing the same tissue. See
+`docs/PLAN_after_vacation_2026-08-19.md` §8.
 
 ### ADR-0027's stated basis for the pairing was wrong; the pairing is not
 
@@ -1272,6 +1290,16 @@ ADR-0025 exists to fix, and that claim needs no repeat-pair argument. The orderi
 classifier conclusion is unchanged and now rests on an external anchor rather than internal
 metrics: published relative plaque area for App^NL-G-F is ~1.2–1.5 % at 7 months, the
 gain-invariant classifier reports 1.52 %, and the unnormalised classifiers report 5–50 %.
+
+**Two corrections to this anchor argument, 2026-08-19.** (a) The 1.52 % figure is **stale** —
+it predates ADR-0029, and measured inside the tissue mask the z130 cohort median is
+**2.06 %**, i.e. 1.4–1.7× the anchor rather than inside it. (b) The antibody correction is
+not applied: ADR-0018 records that 82E1 stains 2.5–4.5× more area than 6E10 in this line, so
+against a 1.2–1.5 % 6E10 reference the expected 82E1 value is roughly **3–7 %** — which is
+where the *global* arm sits, not z130. An anchor whose sign is ambiguous cannot arbitrate
+between classifiers differing by ~3×. **The classifier ordering should not be defended on
+this basis.** It survives on the brightness evidence and the same-tissue scatter; see
+`docs/PLAN_after_vacation_2026-08-19.md` §10.
 
 ---
 
@@ -1415,3 +1443,118 @@ whole-section area, before independent artefact exclusion.* Not validated plaque
 Still open and not addressed here: independent artefact mask (D-2), Cy3 valid support, hole
 and ventricle policy, z130 seam/edge/variance-floor QC, resolution sweep, rescan-to-all
 matching, leave-one-animal-out repeats, and the human reference.
+
+---
+
+## ADR-0031 — Per-section and per-region classifiers are a recorded deviation from §2
+
+**Date:** 2026-08-19. **Status:** accepted, with the deviation stated.
+
+`CLAUDE_v1.3.md` §2 lists as a non-negotiable: *"no per-image thresholds, no per-region
+thresholds, no per-animal calibration"*. The `global` arm writes **121 per-section classifier
+files** (`make_global_classifiers.py`) and the regional arm writes one classifier **per region
+per section** (`make_region_classifiers.py`). That is exactly what the rule forbids, and until
+now it was nowhere recorded as a deviation. External review 2026-08-19.
+
+**Why it was done.** The classifier itself — the forest, the features, the decision rule — is
+identical across every file. What differs is two constants injected into the op chain ahead of
+it: a per-section offset (`glass_p50`) and gain (`t_p50 − glass_p50`). This avoids rewriting
+42 GB of normalised pixels. It is a *preprocessing* calibration expressed through the
+classifier file, not 121 differently-trained rules.
+
+**Why the deviation is still real.** The §2 rule exists so that no per-image quantity can
+absorb a treatment effect. This normalisation can, and measurably does: the gain is
+**1.252× larger in rapamycin (diet arm, p = 0.038)**, replicated in the IP arm.
+
+**The direction, which is easy to get backwards.** A larger divisor gives a *smaller* reading,
+so rapamycin is **under**-reported. The bias runs in the same direction as a true reduction
+and therefore *exaggerates* one; it cannot mask one. The global arm's null is conservative
+evidence against a rapamycin benefit. Directly measured propagated bias on the diet ratio:
+**1.04 (0.93–1.17)**.
+
+**Decision.** Keep the arm, record the deviation here, and never report it without the gain
+imbalance stated alongside. The circularity defence in `retrain_global.groovy` — that burden
+is ~2 % of tissue so the in-tissue median is plaque-free by construction — assumes the answer
+to the diffuse-signal question the halo experiment exists to settle, and must not be used to
+adjudicate that question.
+
+## ADR-0032 — The GLOBAL classifier was trained on scrambled class labels; retrained as v4_global
+
+**Date:** 2026-09-09 · **Status:** accepted · **Source:** external review 2026-09-09, finding F1
+
+**What was wrong.** `retrain_global.groovy` builds training samples one image at a time,
+because each image needs its own offset and gain in the op chain. QuPath numbers the classes
+it finds in *that* image from zero: a three-class image yields `{Abeta:0, Ignore*:1,
+Negative:2}`, a secondary-only control with only `Ignore*`/`Negative` yields
+`{Ignore*:0, Negative:1}`. The script kept the **first** image's map and concatenated every
+image's raw responses. The two control images therefore contributed their `Ignore*` samples
+as **Abeta** and their `Negative` samples as **Ignore\***. The reviewer reproduced the shipped
+`v3_global.json` byte for byte from the annotation files and counted **1,857 of 4,782
+samples (38.8 %)** mislabelled. Every `gx_*` and `rx_*` per-image classifier carries that
+forest, so **every GLOBAL and REGIONNORM number produced since 2026-08-18 is void**, including
+the age-adjusted replot of 2026-09-08 (withdrawn, see the figure README). The unnormalised
+and z130 arms are unaffected: `retrain.groovy` pools all images into one
+`createTrainingData` call and QuPath builds a single map for them.
+
+Four reviews, including the internal one of 2026-08-07, missed this. It was invisible to
+every check that compared numbers with numbers: the defective model was reproducible,
+its outputs reproduced, and its control readings were low enough to look like specificity.
+
+**Fix.** Every image's responses are remapped to one canonical map
+`{Abeta:0, Ignore*:1, Negative:2}` before concatenation, the per-image map and remap count
+are logged, an unknown class name is a hard error, and the metadata labels are built from the
+canonical map. The two `Ignore*`-only files are still dropped: QuPath yields no training
+data from a single class, and inventing a second class in them would be worse than losing
+30 strokes. The model is saved under a new name, `v4_global`; `v3_global.json` and the 242
+defective per-image files are archived in
+`~/ihc_work/qupath/qupath/classifiers/archive_v3_global_defective_20260909.tgz` for the
+record. Per-image classifiers, cohort evaluation, regional evaluation, derived tables and
+figures are regenerated from v4 into new dated folders; the 2026-08-18 folder is left as the
+reviewed state.
+
+**Also fixed while here.** The usage line omitted `-i`; QuPath runs a project script once
+*per image* without it, so the documented command would have trained 121 times.
+
+## ADR-0033 — Rescan region transfers regenerated with the true inverse transform
+
+**Date:** 2026-09-09 · **Status:** accepted · **Source:** external review 2026-09-09, finding F6
+
+`fit_rigid` maps rescan → original (rotate about the array centre, then shift). Outlines drawn
+on the original therefore need the **inverse**. The 2026-08-19 correction fixed the rotation
+centre offsets but still applied the *forward* rotation; and the corrected script was never
+re-run, so all 13 transferred outlines on disk still matched the pre-correction formula. Both
+were found by the external reviewer with a synthetic landmark.
+
+The transform is now built as a 3×3 matrix reproducing scipy's `rotate` + `shift`
+conventions and inverted numerically, so no sign convention is hand-derived.
+`tests/test_rescan_transform.py` pins the forward model against scipy itself on a Gaussian
+landmark and checks the inverse round-trips, at unit scale and at the 8× pyramid scale. The
+13 files were regenerated (previous versions in `~/ihc_work/region_rois_backup_20260909.tgz`)
+and `region_roi_index.csv` is rebuilt from the directory so transferred files can no longer be
+absent from it. Effect on the six non-zero-angle outlines is ≤ 2 % area and ≤ 31 µm vertex
+displacement (reviewer's measurement); the affected regional rows are re-evaluated with the
+corrected outlines.
+
+## ADR-0034 — Review response 2026-09-09: what else changed, and what was deliberately not
+
+**Also fixed.** A tracked bench note (`config/section_notes.csv`) named a coded animal and its
+treatment group in one sentence; the sentence now names neither. `config/validate_config.py`
+still demanded the `group` column removed in ADR-0016 and rejected the valid table; header
+updated. The production manifest, blinded manifest and provenance manifest were rebuilt against
+the renamed project folder with the **same seed** (key verified identical, 31/31 codes;
+provenance paths resolve 130/130). The figure README's "diet arm at ~6.2 months, 76-day gap"
+sentence was corrected to the recorded 4.6/5.4-month ages. A repository-resident batch
+evaluation driver (`scripts/run_eval_batch.sh`) and region-anchor generator
+(`scripts/make_region_anchors.py`) replace the `/tmp`-only files the August run depended on.
+
+**Pushed back.** The review's claim that the cohort was not imaged in one session rests on a
+UTC-midnight split: the six "18 July" sections were acquired 23:30–23:59 UTC and the next at
+00:04 on 19 July, one continuous overnight run. The only second session is 5 August. The
+"5.3–3,270-fold" rescan range for the macro folds in the two originals acquired at the wrong
+exposure, where the denominator is near zero; the like-for-like range is 5–15×.
+
+**Not acted on, by decision of the PI (2026-09-09).** No pre-registration of an endpoint
+selection rule: this is exploratory data. The hand-drawn hippocampus and isocortex outlines
+remain the regional denominators until the atlas registration exists; their known
+inconsistency (10-fold hippocampal area range, ~2.4× within animal) is a stated limitation of
+every regional number. Backup of the raw tree is handled outside this repository.

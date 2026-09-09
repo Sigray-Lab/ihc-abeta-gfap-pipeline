@@ -42,7 +42,7 @@ if _SRC.is_dir() and str(_SRC) not in sys.path:
 # data-root resolution
 # --------------------------------------------------------------------------
 DEFAULT_DATA_ROOT = Path(
-    "~/Dropbox/longevity_project/projects/Rapamycin_CSF_mice_Per"
+    "~/Dropbox/longevity_project/projects/Rapamycin_CSF_cell_mice_Per"
     "/IHC_analysis_pipeline/RawData"
 )
 

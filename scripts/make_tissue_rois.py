@@ -19,8 +19,13 @@ Writing the mask out as an annotation makes the numerator and the denominator th
 region by construction, for every classifier.
 
 Coordinates are full-resolution pixels, which is what QuPath's GeoJSON reader expects.
-Holes are preserved: a ventricle excluded from the mask stays excluded, rather than being
-handed back by the polygon conversion.
+The polygon conversion preserves holes correctly -- an interior ring in the mask survives
+into the GeoJSON. **But there are none to preserve.** `tissue_mask()` runs
+`binary_fill_holes` and re-intersects only with acquired (non-NaN) support, so enclosed
+*finite* background -- ventricles, tears, fold interiors -- is filled before this code ever
+sees it. Measured 2026-08-19: **zero interior rings across all 121 exported ROIs**, roughly
+2.56 % of the denominator. An earlier version of this docstring claimed a ventricle "stays
+excluded". It does not. Corrected after external review 2026-08-19.
 
     python3 scripts/make_tissue_rois.py [--out DIR] [--project SPEC.json]
 """

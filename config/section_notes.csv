@@ -1,5 +1,5 @@
 tube_id,scan,section_label,action,note,source,date
-37,original,04,flag_artefact,Small hole in the tissue. Section is still usable — the hole simply must not count toward the area denominator. The tissue mask removes it automatically (no tissue = not in the denominator) so no manual step is needed; this row exists so the QC overlay is checked rather than assumed.,wet-lab,2026-08-07
+37,original,04,flag_artefact,Small hole in the tissue. Section is still usable — the hole simply must not count toward the area denominator. CORRECTED 2026-08-19: the tissue mask does NOT remove it. tissue_mask() fills every enclosed finite hole (0 interior rings in all 121 ROIs) so this hole IS counted as denominator area. This animal is still in the analysis. A manual step IS needed - the D-2 artefact mask, still PENDING_PI_DECISION.,wet-lab,2026-08-07
 37,original,03,prefer_section,"the wet-lab scientist's preferred section of the positive pair, because 04 has the hole above.",wet-lab,2026-08-07
 49,rescan,01,exclude_section,"Positive, not a false negative — but there was dirt on the slide and the microscope was slightly out of focus. wet-lab excluded it.",wet-lab,2026-08-07
 49,original,01,flag_artefact,"In focus and usable. There is an artefact to exclude — mark it in the artefact mask rather than dropping the section.",wet-lab,2026-08-07

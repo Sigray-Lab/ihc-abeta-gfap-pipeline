@@ -117,7 +117,7 @@ __all__ = [
 
 #: Cohort default location of the raw ``.vsi`` index files (used only by __main__).
 DEFAULT_RAW_DATA_DIR = (
-    "~/Dropbox/longevity_project/projects/Rapamycin_CSF_mice_Per"
+    "~/Dropbox/longevity_project/projects/Rapamycin_CSF_cell_mice_Per"
     "/IHC_analysis_pipeline/RawData"
 )
 

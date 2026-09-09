@@ -119,7 +119,18 @@ if (imageDataList.isEmpty()) { println 'NO TRAINING DATA'; return }
 // ---- 2. feature op: Cy3 -> [local normalisation] -> 12 multiscale features --
 def feats = [MultiscaleFeature.GAUSSIAN, MultiscaleFeature.LAPLACIAN,
              MultiscaleFeature.WEIGHTED_STD_DEV, MultiscaleFeature.GRADIENT_MAGNITUDE]
-def scaleOps = [1.0, 2.0, 4.0].collect { s -> ImageOps.Filters.features(feats, s, s) }
+// Feature sigmas are declared in MICROMETRES and converted to pixels at the working
+// resolution, so that a resolution sweep changes sampling WITHOUT changing physical
+// feature scale. Until 2026-08-19 these were hard-coded pixel sigmas [1, 2, 4]; run that
+// way against the config's downsample sweep [1,2,4,8] (0.325-2.60 um/px), pixel size and
+// physical scale move together and the sweep answers nothing. External review 2026-08-19.
+def FEATURE_SIGMAS_UM = [1.3, 2.6, 5.2]      // == [1, 2, 4] px at the current 1.30 um/px
+def scaleOps = FEATURE_SIGMAS_UM.collect { um ->
+    def s = um / UM
+    ImageOps.Filters.features(feats, s, s)
+}
+println("  feature sigmas: " + FEATURE_SIGMAS_UM + " um = " +
+        FEATURE_SIGMAS_UM.collect { (it / UM).round(3) } + " px at ${UM} um/px")
 
 def ops = []
 if (STD_RADIUS > 0) {

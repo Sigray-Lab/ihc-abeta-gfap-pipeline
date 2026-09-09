@@ -40,7 +40,7 @@ roots:
   # ---- read-only original data -------------------------------------------------
   # 31 .vsi index files (tubes 29-58 and 60) plus the _Image_NN_ payload folders.
   # The pipeline opens these read-only and must never create, modify or delete here.
-  raw_root: ~/Dropbox/longevity_project/projects/Rapamycin_CSF_mice_Per/IHC_analysis_pipeline/RawData
+  raw_root: ~/Dropbox/longevity_project/projects/Rapamycin_CSF_cell_mice_Per/IHC_analysis_pipeline/RawData
 
   # ---- derived artefacts: OUTSIDE Dropbox, OUTSIDE git --------------------------
   # Everything under work_root must be regenerable from raw + code + config.
@@ -59,7 +59,7 @@ roots:
   # Inside the project folder so it syncs to Dropbox and gets backed up with
   # everything else. It is NOT in the git repo (the repo lives at ~/ihc_pipeline),
   # so it cannot be pushed. 
-  custodian_root: "~/Dropbox/longevity_project/projects/Rapamycin_CSF_mice_Per/IHC_analysis_pipeline/BlindingKey"
+  custodian_root: "~/Dropbox/longevity_project/projects/Rapamycin_CSF_cell_mice_Per/IHC_analysis_pipeline/BlindingKey"
 
   # ---- the repository itself ---------------------------------------------------
   # Resolved at runtime from the location of the `ihc` entry command; listed here so
