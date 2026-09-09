@@ -6,17 +6,17 @@
  * 2x disc, plus Abeta area over the whole tissue-bearing frame. Recovery = footprint Abeta / footprint area.
  * Also run on the matching _clean image to get the host's own false-positive baseline.
  */
-import qupath.lib.classifiers.pixel.PixelClassifiers
+import qupath.opencv.ml.pixel.PixelClassifiers
 import qupath.lib.objects.PathObjects
 import qupath.lib.roi.ROIs
 import qupath.lib.regions.ImagePlane
-import groovy.json.JsonSlurper
+import qupath.lib.io.GsonTools
 
 def parts = (args[0] as String).split(',')
 def CLS = parts[0]; def BLOBS = parts[1]; def OUT = parts[2]; def LABEL = parts[3]
 setImageType('FLUORESCENCE')
 def classifier = PixelClassifiers.readClassifier(java.nio.file.Paths.get(CLS))
-def meta = new JsonSlurper().parse(new File(BLOBS))
+def meta = GsonTools.getInstance().fromJson(new File(BLOBS).text, Map)
 def cal = getCurrentServer().getPixelCalibration()
 double pxArea = cal.getPixelWidthMicrons() * cal.getPixelHeightMicrons()
 def plane = ImagePlane.getDefaultPlane()
