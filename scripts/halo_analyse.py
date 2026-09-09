@@ -15,6 +15,7 @@ def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--dir", type=Path, default=Path.home() / "ihc_work/halo_20260909")
     a = ap.parse_args()
     d = pd.concat([pd.read_csv(f) for f in sorted(a.dir.glob("halo_*.csv"))], ignore_index=True)
+    d = d.drop_duplicates()          # a run launched twice appends identical rows
     d["host"] = d.image.str.replace(r"_(clean|blobs)$", "", regex=True); d["kind"] = d.image.str.extract(r"_(clean|blobs)$")
     d["arm"] = d.classifier.str.replace(r"^gx_.*", "GLOBAL", regex=True)
     d["frac"] = d.abeta_um2 / d.foot_area_um2

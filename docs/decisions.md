@@ -1558,3 +1558,51 @@ selection rule: this is exploratory data. The hand-drawn hippocampus and isocort
 remain the regional denominators until the atlas registration exists; their known
 inconsistency (10-fold hippocampal area range, ~2.4× within animal) is a stated limitation of
 every regional number. Backup of the raw tree is handled outside this repository.
+
+## ADR-0035 — Blob-recovery experiment: no classifier arm represents broad smooth signal; z130 alone recovers compact blobs
+
+**Date:** 2026-09-09 · **Status:** measured; design in `docs/PLAN_halo_experiment.md` (§0 of the
+after-vacation plan) · **Outputs:** `~/ihc_work/halo_20260909/`, `Results/Figures/20260909_globalfix/halo_recovery.png`,
+`DerivedData/aris_v3_2026-09-09_globalfix/halo_recovery.csv`
+
+**Design as run.** Three secondary-only controls spanning the brightness range (Cy3 tissue
+medians 148, 260, 363 counts), each exported at the classifiers' own 1.3 µm/px working
+resolution as OME-TIFF, once clean and once with 20 Gaussian blobs added to Cy3 in raw counts:
+FWHM 20/40/80/160/320 µm × peak 1.25/1.5/2/4 × the local tissue background, placed inside the
+tissue mask, ≥ 400 µm apart and ≥ 300 µm from the edge (`scripts/halo_inject.py`). Each image
+was measured with the unnormalised, z130 and corrected GLOBAL (v4, host-specific anchors)
+classifiers (`qupath/scripts/halo_eval.groovy`). Recovery = Aβ area inside the blob footprint
+(the disc where the added signal is ≥ 25 % of the peak) ÷ footprint area, minus the same disc
+on the clean image (`scripts/halo_analyse.py`). Baselines were ~0 everywhere.
+
+**Result — median recovered fraction of the footprint (three hosts):**
+
+| FWHM | unnormalised 2× / 4× | GLOBAL v4 2× / 4× | z130 2× / 4× |
+|---|---|---|---|
+| 20 µm | 0.13 / 0.07 | 0.01 / 0.20 | **0.55 / 1.00** |
+| 40 µm | 0.00 / 0.01 | 0.00 / 0.09 | **0.19 / 0.41** |
+| 80 µm | 0.00 / 0.00 | 0.00 / 0.06 | 0.04 / 0.00 |
+| 160 µm | 0.00 / 0.00 | 0.00 / 0.01 | 0.01 / 0.00 |
+| 320 µm | 0.00 / 0.00 | 0.00 / 0.08 | 0.00 / 0.00 |
+
+Nothing is recovered by any arm at 1.25× or 1.5× background. Whole-frame Aβ totals change by
+< 1 % after injecting 5.1 mm² of footprint per host.
+
+**Reading.** Two of the three outcomes anticipated in the plan did not occur; a third did.
+z130 falls off above its own neighbourhood exactly as its construction predicts, so its "one
+object above 5,000 µm² in 121 sections" cannot be quoted as biology. But the unnormalised and
+GLOBAL arms do **not** recover the broad blobs either, at any width, even at 4× background —
+so the limitation is not the normalisation. All three forests use the same texture features
+(Gaussian, Laplacian, weighted s.d., gradient magnitude at σ 1.3–5.2 µm) and were trained on
+textured deposits; a smooth intensity plateau has no texture at those scales and is called
+`Negative` whatever its height. z130 alone recovers compact high-contrast blobs, because its
+local normalisation turns a 20–40 µm bump into a strong local z-score with sharp edges.
+
+**What this does and does not settle.** It settles that *intensity elevation alone* is
+invisible to every current arm, and that z130 is additionally blind to anything broader than
+~80 µm. It does **not** settle whether real diffuse deposits are measured: those are granular
+and fibrillar, not smooth, and the classifiers may see their texture. The follow-up that would
+settle it is to inject *textured* patches (real plaque texture, scaled) rather than Gaussians —
+cheap, same machinery. Until then every write-up states that broad, smooth immunoreactivity is
+not measured by any arm, and the human reference boxes (which include diffuse deposits) remain
+the arbiter of what the endpoint actually captures.
