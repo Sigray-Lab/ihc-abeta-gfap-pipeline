@@ -9,8 +9,8 @@ cols = [("v4", "pct_abeta_v4_um2"), ("gate 1.5x", "pct_abeta_gate1.5_um2"), ("ga
 st, ct = d[d.condition == "positive"], d[d.condition != "positive"]
 fig, axes = plt.subplots(1, 2, figsize=(14, 6))
 ax = axes[0]; ax.scatter(st.pct_abeta_v4_um2, st.pct_abeta_gate2_um2, s=22, c="tab:red", label=f"stained (n={len(st)})"); ax.scatter(ct.pct_abeta_v4_um2, ct.pct_abeta_gate2_um2, s=22, c="tab:blue", label=f"antibody-free controls (n={len(ct)})")
-lim = max(d.pct_abeta_v4_um2.max(), 1) * 1.05; ax.plot([0, lim], [0, lim], "k:", lw=.8, label="no change"); ax.plot([0, lim], [0, 0.38 * lim], "k--", lw=.8, label="x0.38 (median stained ratio)")
-ax.set_xlabel("v4 GLOBAL, Abeta % of tissue"); ax.set_ylabel("v4 gated at 2x local background, %"); ax.legend(fontsize=8); ax.set_title("Per section: gate removes ~60% of v4 area, ranking kept", fontsize=10)
+mr = (st.pct_abeta_gate2_um2 / st.pct_abeta_v4_um2).median(); lim = max(d.pct_abeta_v4_um2.max(), 1) * 1.05; ax.plot([0, lim], [0, lim], "k:", lw=.8, label="no change"); ax.plot([0, lim], [0, mr * lim], "k--", lw=.8, label=f"x{mr:.2f} (median stained ratio)")
+ax.set_xlabel("v4 GLOBAL, Abeta % of tissue"); ax.set_ylabel("v4 gated at 2x local background, %"); ax.legend(fontsize=8); ax.set_title(f"Per section: gate removes ~{100*(1-mr):.0f}% of v4 area, ranking kept", fontsize=10)
 ax = axes[1]; xs = np.arange(len(cols))
 for i, (name, c) in enumerate(cols):
     ax.scatter(np.full(len(st), i - 0.15) + np.random.default_rng(1).uniform(-.06, .06, len(st)), st[c], s=12, c="tab:red", alpha=.7)
