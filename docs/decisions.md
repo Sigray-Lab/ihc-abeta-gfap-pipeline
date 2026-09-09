@@ -1670,3 +1670,48 @@ python3 scripts/make_global_classifiers.py --classifier v5_global --anchors Deri
 scripts/run_eval_batch.sh 4 ~/ihc_work/tissue_rois 'g5_{image}' ~/ihc_work/eval_20260909/tissue_GLOBAL_v5.csv
 scripts/run_eval_batch.sh 4 ~/ihc_work/region_rois/Hippocampus 'g5_{image}' ~/ihc_work/eval_20260909/region_Hippocampus_GLOBAL_v5.csv Hippocampus
 ```
+
+## ADR-0037 — Brightness gate on v4 output: half of v4's Aβ area is near-background halo; gating removes it, keeps ranking, and shrinks the diet difference
+
+**Context.** Reference-box QC on T18_s03 (three 500-µm hippocampal boxes, ADR-0036 follow-up, 2026-09-09
+evening): 39–52 % of the area v4 GLOBAL calls Aβ is dimmer than 1.5× the box background and only 17–22 % is ≥3×.
+The dim area is faint textured tissue next to deposits and dim somata, which the PI, inspecting the boxes, did not
+regard as plaque. v5 (ADR-0036) had shown that retraining against control false positives removes the halo only
+by also removing small deposits. A post-hoc rule was therefore tried instead: keep a v4 Aβ pixel only where
+Cy3 ≥ k × local background, with local background the mean Cy3 in a 400-µm window of tissue that is not
+classifier-Aβ (10-µm halo excluded), computed at 5.2 µm/px; k = 1.5, 2, 3; identical rule on stained and
+secondary-only sections; no retraining. v4 objects were exported per section from QuPath
+(`createDetectionsFromPixelClassifier`, minimum area 0; P08_s01 inside its tissue ROI because a full-frame tile
+is unreadable) and rasterised at the classifier's 1.3 µm/px with pixel-centre sampling, which reproduces
+QuPath's own v4 areas within ±5 % (median ratio 1.000, n = 119; PIL/OpenCV fills overstate small objects by up to
+35 % and were rejected).
+
+**Result (119 sections; 2 excluded as before).**
+
+| | v4 | gate 1.5× | gate 2× | gate 3× |
+|---|---|---|---|---|
+| stained median (n=67) | 5.46 % [0.71–26.63] | 3.61 % | 2.22 % [0.38–10.74] | 1.15 % |
+| worst control, all exposures (n=52) | 2.87 % | 1.28 % | 0.61 % | 0.12 % |
+| worst control, standard exposure (n=48) | 1.16 % | 0.56 % | 0.35 % | 0.12 % |
+| control median | 0.255 % | 0.099 % | 0.050 % | 0.010 % |
+| stained median / worst control | 1.9× | 2.8× | 3.6× | 9.5× |
+| brightness Spearman, stained / controls | −0.06 / −0.43 | −0.05 / −0.46 | −0.05 / −0.45 | −0.04 / −0.22 |
+| hippocampus diet ratio, MWU p (8 vs 11) | 0.578, 0.020 | 0.751, 0.091 | 0.713, 0.109 | 0.566, 0.091 |
+| hippocampus IP ratio, p (6 vs 5) | 1.28, 0.66 | 1.25, 0.66 | 1.32, 0.66 | 1.34, 0.66 |
+
+Stained-section ranking is kept (Spearman +0.979 v4 vs gate 2×; median ratio 0.44, range 0.29–0.61). On the two
+T18_s03 boxes the 2× gate keeps the granular deposits and the cores and drops the dim rings and somata
+(HIP1 19.6 → 6.6 %, HIP2 39.3 → 12.6 %; `DerivedData/brightness_gate_2026-09-09/png/`).
+
+**Reading.** The gate is more specific than v4 (controls fall 4.7×, stained 2.5×) without the small-deposit loss
+of v5, and it does not change the brightness picture. It does change the treatment picture: the diet difference
+in hippocampus shrinks from 0.58 to 0.71–0.75 at 1.5–2× (p 0.09–0.11) and returns to 0.57 at 3×, so part of the
+v4 difference sits in the dim halo, and the effect size is method-dependent in the range 0.57–0.75 across the
+four settings. The IP arm is unchanged (~1.3, n.s.). None of the four settings is validated; the gate has one
+free parameter and the choice must not be made on the diet p-value. The reference boxes, once traced (with the
+extension recommended in `docs/EXTERNAL_REVIEW_ROUND2_ASSESSMENT_2026-09-09.md` §5.3), are the arbiter between
+v4, gated v4 and any retrained model.
+
+**Decision.** v4 GLOBAL remains the working model; the 2× gate is carried as a labelled alternative endpoint in
+every table until the reference tracing decides. Scripts: `pipeline/scripts/brightness_gate/`. Outputs:
+`DerivedData/brightness_gate_2026-09-09/`. Not applied to the REGIONNORM or z130 arms.
