@@ -1758,3 +1758,32 @@ median from the anchor file (the August statistic differs from it by up to 39 co
 affects only the Spearman diagnostic. Exploratory status and ADR-0034's caveats unchanged; "no photobleaching"
 (ADR-0012 era) is withdrawn as a finding — it measured background per millisecond, and every same-exposure pair
 shows halved plaque contrast in August, cause not apportioned between specimen and instrument.
+
+## ADR-0039 — v6, a DAPI-channel veto on v4 (Aris's second-detector idea): removes a third of the control false positives and a tenth of the stained area
+
+**Context.** The wet-lab scientist proposed (2026-09-09) training a second classifier on the antibody-free controls
+and letting it veto the plaque classifier, rather than mixing control annotations into one model (which v5 showed
+removes small deposits, ADR-0036). A Cy3-only veto would repeat v5, because on one channel an autofluorescent body
+and a small deposit are the same object; the separating information is spectral. Measured on v4's objects: on three
+controls 29–33 % of the false-positive area is DAPI-bright (>1.5× local) against 2–5 % of the Aβ area on three
+stained sections; FITC is unusable (GFAP gliosis lights up 23–63 % of real plaque area). v6 was therefore built as a
+deterministic DAPI veto first (`scripts/brightness_gate/veto.py`); a trained DAPI-only veto classifier is a possible
+follow-up, not built.
+
+**Result (119 sections, the 2026-09-09 section set, so comparable with ADR-0036/0037).**
+
+| | v4 | v5 | gate 2× | gate 3× | v6 | v6 + gate 2× |
+|---|---|---|---|---|---|---|
+| stained median | 5.46 % | 1.07 % | 2.22 % | 1.15 % | 4.98 % | 2.12 % |
+| worst control, all / standard exposure | 2.87 / 1.16 % | 0.26 / – | 0.61 / 0.35 % | 0.12 / 0.12 % | 1.93 / 0.72 % | 0.28 / 0.10 % |
+| stained median / worst control | 1.9× | 4.1× | 3.6× | 9.5× | 2.6× | 7.6× |
+| hippocampus diet ratio, p | 0.58, 0.020 | 0.65, 0.11 | 0.71, 0.11 | 0.57, 0.09 | 0.53, 0.020 | 0.60, 0.075 |
+| hippocampus IP ratio | 1.28 | 1.55 | 1.32 | 1.34 | 1.29 | 1.31 |
+
+v6 removes a median 29 % of v4's area on controls and 9 % on stained sections; on the T18_s03 HIP1 box the removed
+pixels are the cell-like rings at object edges (`DerivedData/v6_dapi_veto_2026-09-10/png/`). It keeps rankings and
+the diet difference. Its ceiling is set by physics: the remaining control false positives are Cy3-only.
+
+**Decision.** v6 joins the reference set (v4, v5, gate, v6, v6 + gate). No method is adopted; the choice is made by
+the PI and the wet-lab scientist on randomly sampled boxes viewed side by side across methods, then frozen (D-3),
+per `docs/PLAN_v6_autofluorescence_veto.md`. Outputs: `DerivedData/v6_dapi_veto_2026-09-10/`.

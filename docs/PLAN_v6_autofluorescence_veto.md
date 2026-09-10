@@ -46,3 +46,15 @@ a random sample of sections and boxes with all methods side by side and agree on
 a plaque; that agreed definition (D-3) is then frozen and, where possible, checked against traced reference boxes.
 The random sample should include bright rescans, dim originals, antibody-free controls and tissue rims, which the
 current 38-box panel does not cover.
+
+## Results so far (2026-09-10, 119 sections, 2026-09-09 section set)
+
+| | v4 | v5 | gate 2× | gate 3× | v6 | v6 + gate 2× |
+|---|---|---|---|---|---|---|
+| stained median | 5.46 % | 1.07 % | 2.22 % | 1.15 % | 4.98 % | 2.12 % |
+| worst control (standard exposure) | 1.16 % | – | 0.35 % | 0.12 % | 0.72 % | 0.10 % |
+| stained median / worst control (all exposures) | 1.9× | 4.1× | 3.6× | 9.5× | 2.6× | 7.6× |
+| hippocampus diet ratio, p | 0.58, 0.020 | 0.65, 0.11 | 0.71, 0.11 | 0.57, 0.09 | 0.53, 0.020 | 0.60, 0.075 |
+| T18_s03 HIP1 box, % of box | 18.8 | 4.6 | 7.2 | 4.2 | 17.0 | 6.8 |
+
+ADR-0039. Side-by-side panels for T18_s03 HIP1: `DerivedData/v6_dapi_veto_2026-09-10/png/`.
