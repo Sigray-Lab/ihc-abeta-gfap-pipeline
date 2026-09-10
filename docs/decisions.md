@@ -1715,3 +1715,46 @@ v4, gated v4 and any retrained model.
 **Decision.** v4 GLOBAL remains the working model; the 2× gate is carried as a labelled alternative endpoint in
 every table until the reference tracing decides. Scripts: `pipeline/scripts/brightness_gate/`. Outputs:
 `DerivedData/brightness_gate_2026-09-09/`. Not applied to the REGIONNORM or z130 arms.
+
+## ADR-0038 — Session rule: three animals measured on their July originals; the August rescans stay only where July is unusable
+
+**Context.** The 5-August session re-imaged six slides. Two were re-acquired to fix exposure (their July positives
+were taken at 146 and 398 ms and are unusable); the others were re-imaged in spare booking time to add a second
+positive section, which the wet-lab note of 2026-08-07 flags as lower quality. The manifest's "prefer a rescan when
+one resolves" default then moved the *first* positive section of V22, L03 and B16 onto the August scan as well,
+although in-focus standard-exposure July originals exist. The same note restricts the preference to the two exposure
+slides. The external round-2 review (2026-09-09) measured the session effect for corrected GLOBAL on common tissue
+domains: same-exposure rescans read 0.37–0.59× their originals; the project's own August pairs show the same for
+z130 (0.37–0.74×) and the opposite for the unnormalised arm (1.2–1.6×). No arm is session-stable, so three animals
+sat on a different scale from the other 26 without a decision.
+
+**Decision (PI, 2026-09-10).** `prefer_scan` notes for the three tubes in `config/section_notes.csv`; manifest rebuilt
+and re-blinded with the recorded seed (codes unchanged 31/31; exactly six `use_for_measurement` flags flipped; 121
+measured sections as before). The August second sections of those animals stay in the whole-section set (no region
+outlines exist for them). The two exposure animals stay on their rescans as a documented caveat; no rescaling by the
+pair ratio is applied. The three July originals were measured with anchors computed by the production method (glass
+median >100 µm outside tissue, tissue median, level 3; reproduces the production anchors of the rescans within
+1–2 % of gain), per-section GLOBAL and REGIONNORM classifiers from the v4 forest, DAPI tissue ROIs, and the manual
+outlines moved from the rescans by the accepted rigid registration (pure shifts; 98–100 % inside the July tissue).
+All four arms re-measured for those sections (QC ok, coverage 0.94–0.98). Inputs in
+`DerivedData/session_swap_2026-09-10/`, tables in `DerivedData/aris_v4_2026-09-10_session/`, figures in
+`Results/Figures/20260910_session/`. The QuPath project still lacks the three originals; add them before the next
+full re-evaluation (the GUI was open, so the project was not touched).
+
+**What changed.** The July originals read 1.7–2.7× their rescans whole-section (V22 2.95→5.03 %, L03 2.67→6.19 %,
+B16 6.20→16.97 %) and more in hippocampus (0.09→0.64, 4.63→10.44, 4.42→13.24 %). Two animals move up the ranking
+(B16 15th→3rd, L03 14th→9th). Whole-section GLOBAL medians are unchanged.
+
+| hippocampus, per animal | 2026-09-09 | session rule |
+|---|---|---|
+| diet GLOBAL ratio, p | 0.579, 0.020 | 0.535, 0.016 |
+| diet REGIONNORM | 0.606, 0.041 | 0.543, 0.033 |
+| diet z130 | 0.941, 0.78 | 0.926, 0.60 |
+| IP GLOBAL | 1.283, 0.66 | 1.078, 1.00 |
+| IP REGIONNORM | 1.067, 0.93 | 0.915, 0.54 |
+
+Isocortex diet ratios 0.64–0.74 (n.s.) as before. The brightness column for the three originals uses their tissue
+median from the anchor file (the August statistic differs from it by up to 39 counts on other sections), which
+affects only the Spearman diagnostic. Exploratory status and ADR-0034's caveats unchanged; "no photobleaching"
+(ADR-0012 era) is withdrawn as a finding — it measured background per millisecond, and every same-exposure pair
+shows halved plaque contrast in August, cause not apportioned between specimen and instrument.
