@@ -1787,3 +1787,39 @@ the diet difference. Its ceiling is set by physics: the remaining control false 
 **Decision.** v6 joins the reference set (v4, v5, gate, v6, v6 + gate). No method is adopted; the choice is made by
 the PI and the wet-lab scientist on randomly sampled boxes viewed side by side across methods, then frozen (D-3),
 per `docs/PLAN_v6_autofluorescence_veto.md`. Outputs: `DerivedData/v6_dapi_veto_2026-09-10/`.
+
+## ADR-0040 — Aβ is locked: unnormalised and v4 GLOBAL are both presented, other approaches are archived
+
+**Date:** 2026-11-05 · **Decided by:** PI · **Status:** accepted
+
+**Decision.** Run and present both **unnormalised** (`v2_nonorm_s1`) and **v4 GLOBAL** (`gx_<image>`), side by side, with neither
+called the better one, and let readers judge. REGIONNORM, z130, v5, the brightness gates, v6 and the Plaque Coder rating work are
+archived. The project moves on to GFAP.
+
+**Why.** After a long search no approach is established as the accurate one, and the evidence for normalising is weaker than this
+log used to suggest. Stained-section correlations with Cy3 brightness are circular, because Cy3 is the antibody channel. The
+non-circular tests split: background brightness varies 2.6× without primary antibody and is only 1.16× higher with it, so the median
+is mostly not antibody; but antibody-free brightness does not clearly predict stained area (Spearman +0.22, p 0.28), false area on
+antibody-free sections is small unnormalised (median 0.04 %) and larger under v4 (0.22 %), and on same-tissue rescans v4 moved
+further than unnormalised. Against that, unnormalised has the wider between-mouse spread, which normalising narrows. The two rank
+mice almost identically (Spearman 0.95 in hippocampus) and agree on the direction of the diet difference, so presenting both is honest
+and costs little.
+
+**Results.** `DerivedData/abeta_final_2026-11-05/` is the entry point: a filtered view of `aris_v4_2026-09-10_session`, nothing
+re-measured, checked to reproduce the per-mouse values. Hippocampus diet: unnormalised ratio of medians 0.39, mean difference −1.75
+points, p 0.051; v4 GLOBAL 0.54, −2.05, p 0.016. Hippocampus IP shows no difference under either. The four unnormalised controls with
+collapsed coverage are reported as failures, not zeros, restoring the August rule that `build_tables.py` had dropped; they are the same
+four short-exposure controls behind v4's 2.86 % maximum, so the standard-exposure ceiling, 1.16 % for v4 and 1.99 % unnormalised, is the
+one to quote.
+
+**Archive.** Nothing was deleted. Git tag `abeta-all-approaches-2026-11-05` restores the repo with every approach in place. Scripts are
+in `archive/abeta_other_approaches_2026-11-05/`, results and superseded figures in `Archive/abeta_other_approaches_2026-11-05/` in
+the project folder with an index, and 291 classifier files in `classifiers/archive_abeta_other_approaches_20261105/`, leaving 123 in
+QuPath's dropdown: one `gx_` per measured section, `v2_nonorm_s1` and `v4_global`. Paths quoted in earlier ADRs are the pre-archive
+ones. `coverage_qc.py` and `focus_scores.py` stay active in `scripts/qc/`.
+
+**Open, carried forward.** Neither approach is validated against traced reference masks, and D-3 remains open. The main QuPath project
+still holds the three replaced rescans and lacks the July originals V22_s01, L03_s03 and B16_s01 (ADR-0038); fix this before any new
+measurement run, including GFAP. The "no photobleaching" withdrawal and other text corrections listed in the round-2 assessment are not
+all applied to older ADRs.
+

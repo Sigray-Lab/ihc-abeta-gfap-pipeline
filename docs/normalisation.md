@@ -5,6 +5,8 @@ staining strength, section thickness, autofluorescence, lamp output, acquisition
 A pixel classifier trained on absolute intensity inherits that variation, and the result
 tracks how bright the photograph was rather than how much marker is present.
 
+**Decision 2026-11-05 (ADR-0040):** options 1 (none) and 2 (global) are both run and presented. The local option and the other approaches are archived. Note that the gain floor mentioned below exists only in the archived regional factory, and that "marker-free by construction" overstates it: the median moves a little with burden (round-2 audit).
+
 This document describes the three normalisation options implemented here and how to run
 them. It makes no claim about which is correct for a given dataset — that has to be
 measured, and §5 gives the tests.

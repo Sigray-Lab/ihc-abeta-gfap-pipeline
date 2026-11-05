@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Coverage QC: for every fluorescence section in the manifest, what has actually been done to it. One row per section,
+"""Coverage QC for the two presented approaches, unnormalised and v4 GLOBAL (ADR-0040): for every fluorescence section, what has actually been done to it. One row per section,
 built only from files on disk (ROIs, classifiers, measurement rows), never from what the docs say should exist.
 Output: DerivedData/coverage_qc_2026-11-05/coverage_by_section.csv (no group or tube columns)."""
 import json, sys
@@ -22,11 +22,7 @@ d["anchors"] = d.index.isin(ids(DD / "aris_v4_2026-09-10_session/global_norm_anc
 CL = H / "ihc_work/qupath/qupath/classifiers/pixel_classifiers"; d["gx_classifier"] = [(CL / f"gx_{i}.json").exists() for i in d.index]
 aug = DD / "aris_v2_2026-08-18/full_cohort_in_tissue_RAW.csv"
 d["nonorm_whole"] = d.index.isin(ids_for(aug, "v2_nonorm_s1") | ids(SW / "tissue_nonorm.csv"))
-d["z130_whole"] = d.index.isin(ids_for(aug, "v2_z130_s1") | ids(SW / "tissue_z130.csv"))
 d["v4_whole"] = d.index.isin(ids(EV / "tissue_GLOBAL_v4.csv") | ids(SW / "tissue_GLOBAL_v4_july_originals.csv"))
-d["v5_whole"] = d.index.isin(ids(EV / "tissue_GLOBAL_v5.csv"))
-d["gate_whole"] = d.index.isin(ids(DD / "brightness_gate_2026-09-09/section_level_gate.csv") | ids(H / "ihc_work/gate_20260910_session/section_level_gate.csv"))
-d["v6_whole"] = d.index.isin(ids(DD / "v6_dapi_veto_2026-09-10/section_level_v6.csv"))
 d["v4_hip"] = d.index.isin(ids(EV / "region_Hippocampus_GLOBAL_v4.csv") | ids(SW / "region_Hippocampus_GLOBAL_v4_july_originals.csv"))
 d["v4_iso"] = d.index.isin(ids(EV / "region_Isocortex_GLOBAL_v4.csv") | ids(SW / "region_Isocortex_GLOBAL_v4_july_originals.csv"))
 sec = pd.read_csv(DD / "aris_v4_2026-09-10_session/section_level_in_tissue.csv"); g = sec[sec.arm_method == "GLOBAL"].set_index("image")
@@ -47,10 +43,10 @@ if f.exists():
 d.sort_values(["in_use", "condition", "scan"], ascending=[False, False, True]).to_csv(OUT / "coverage_by_section.csv")
 u = d[d.in_use]; n = d[~d.in_use]; st = u[u.condition == "positive"]; ct = u[u.condition != "positive"]
 print(f"fluorescence sections {len(d)}: in use {len(u)} (stained {len(st)}, controls {len(ct)}), not in use {len(n)}\n")
-print("not in use:"); print(n[["scan", "condition", "exposure_Cy3_ms", "bench_action", "nonorm_whole", "z130_whole", "v4_whole", "v5_whole", "gate_whole", "v6_whole", "in_working_table"]].to_string())
-cols = ["in_qupath_project", "tissue_roi", "anchors", "gx_classifier", "nonorm_whole", "z130_whole", "v4_whole", "v5_whole", "gate_whole", "v6_whole", "in_working_table", "valid_in_table", "hip_outline", "iso_outline", "v4_hip", "v4_iso", "in_hip_table", "in_iso_table"]
+print("not in use:"); print(n[["scan", "condition", "exposure_Cy3_ms", "bench_action", "nonorm_whole", "v4_whole", "in_working_table"]].to_string())
+cols = ["in_qupath_project", "tissue_roi", "anchors", "gx_classifier", "nonorm_whole", "v4_whole", "in_working_table", "valid_in_table", "hip_outline", "iso_outline", "v4_hip", "v4_iso", "in_hip_table", "in_iso_table"]
 print("\ncoverage among sections in use:"); print(pd.DataFrame({"stained": st[cols].sum(), "controls": ct[cols].sum(), "all": u[cols].sum()}).astype(int).to_string())
 print("\nin use but missing:")
-for c in cols[:12]:
+for c in cols[:8]:
     m = u.index[~u[c]].tolist()
     if m: print(f"  {c}: {len(m)} -> {m[:12]}")

@@ -11,10 +11,14 @@ from pathlib import Path
 import numpy as np, pandas as pd
 from scipy import ndimage as ndi
 from multiprocessing import Pool
-REPO = Path(__file__).resolve().parents[2]; sys.path.insert(0, str(REPO / "src")); sys.path.insert(0, str(REPO / "scripts" / "brightness_gate"))
+REPO = Path(__file__).resolve().parents[2]; sys.path.insert(0, str(REPO / "src"))
 from ihc.qc.stain_check import read_ets_index, read_pyramid_plane, _decode_tile, CH_DAPI, CH_CY3
 from ihc.qc.tissue_mask import tissue_mask
-from gate import manifest
+def manifest():
+    """Section rows of the provenance manifest, indexed by the image name used everywhere else."""
+    m = pd.read_csv(REPO.parent / "BlindingKey/provenance_manifest.csv"); m = m[m.row_kind == "section"].copy()
+    m["image"] = m.apply(lambda r: f"{r.code}{'b' if r.scan == 'rescan' else ''}_s{str(r.physical_section_label).zfill(2) if str(r.physical_section_label).isdigit() else r.physical_section_label}", axis=1)
+    return m.drop_duplicates("image").set_index("image")
 OUT = Path.home() / "ihc_work/focus_20261105"; OUT.mkdir(exist_ok=True); MIN_SNR = 8.0
 def tile_score(t, px):
     """Edge width in um: step height of the brightest structures over their steepest gradient, after light smoothing.
