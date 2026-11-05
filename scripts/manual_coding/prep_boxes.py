@@ -38,7 +38,11 @@ def main():
         if a.images and img not in a.images: continue
         r = man.loc[img]; px = float(r.pixel_size_um); kind = "control" if r.condition != "positive" else "stained"
         print(f"{img}: {len(g)} boxes, {kind}", flush=True)
-        gj = M / "v4_objects" / f"{img}.geojson"
+        gj = M / "v4_objects" / f"{img}.geojson"; gj5 = M / "v5_objects" / f"{img}.geojson"
+        objs5 = []
+        if gj5.exists():
+            for ft in json.loads(gj5.read_text())["features"]:
+                sh = shape(ft["geometry"]).buffer(0); objs5.extend(list(sh.geoms) if sh.geom_type == "MultiPolygon" else [sh])
         _, GM = gate_section(img, gj, keep_masks=True); _, VM = veto_section(img, gj, keep_masks=True); s2 = GM["s"]
         objs = []
         for ft in json.loads(gj.read_text())["features"]:
@@ -47,12 +51,15 @@ def main():
             x0, y0, x1, y1 = int(b.x0), int(b.y0), int(b.x1), int(b.y1); W, Hh = x1 - x0, y1 - y0; win = sbox(x0, y0, x1, y1)
             chans = {nm: read_region(r.ets_path, ch, x0, y0, x1, y1) for nm, ch in (("cy3", CH_CY3), ("dapi", CH_DAPI), ("fitc", CH_FITC))}
             crop2 = lambda m: np.repeat(np.repeat(m[y0 // s2:-(-y1 // s2), x0 // s2:-(-x1 // s2)], s2, 0), s2, 1)[: Hh, : W]
-            gate3 = crop2(GM["gates"][3.0]); gate2 = crop2(GM["gates"][2.0]); veto = crop2(VM["veto"] & VM["abeta"]); v4m = crop2(GM["abeta"])
-            polys = []
-            for o in objs:
-                if not o.intersects(win): continue
-                for pg in (list(o.geoms) if o.geom_type == "MultiPolygon" else [o]):
-                    polys.append([[float(x - x0), float(y - y0)] for x, y in pg.exterior.coords])
+            gate3 = crop2(GM["gates"][3.0]); gate2 = crop2(GM["gates"][2.0]); gate15 = crop2(GM["gates"][1.5]); veto = crop2(VM["veto"] & VM["abeta"]); v4m = crop2(GM["abeta"])
+            def clip_polys(src):
+                out = []
+                for o in src:
+                    if not o.intersects(win): continue
+                    for pg in (list(o.geoms) if o.geom_type == "MultiPolygon" else [o]):
+                        out.append([[float(x - x0), float(y - y0)] for x, y in pg.exterior.coords])
+                return out
+            polys = clip_polys(objs); polys5 = clip_polys(objs5)
             # practice spots from v4 objects inside the box
             dapi_bg = float(np.median(chans["dapi"])); cy3_bg = float(np.median(chans["cy3"][~v4m])) if (~v4m).any() else 1.0
             lab, n = ndi.label(v4m); spots = []
@@ -84,8 +91,8 @@ def main():
                                           area_um2=round(float(area[i])), gate3_survival=round(float(g3[i]), 2), dapi_contrast=round(float(dmed[i]), 2), cy3_contrast=round(float(cmed[i]), 2)))
             stem = f"{img}_{b.box}"
             np.savez_compressed(M / "data" / f"{stem}.npz", cy3=chans["cy3"].astype(np.uint16), dapi=chans["dapi"].astype(np.uint16), fitc=chans["fitc"].astype(np.uint16))
-            for nm, m in (("gate3", gate3), ("gate2", gate2), ("veto", veto), ("v4", v4m)): Image.fromarray((m.astype(np.uint8) * 255)).save(M / "data" / f"{stem}_{nm}.png")
-            json.dump(dict(image=img, box=b.box, bounds=[x0, y0, x1, y1], px_um=px, side_um=float(b.side_um), kind=kind, label=b.label, v4_polys=polys, spots=spots,
+            for nm, m in (("gate3", gate3), ("gate2", gate2), ("gate15", gate15), ("veto", veto), ("v4", v4m)): Image.fromarray((m.astype(np.uint8) * 255)).save(M / "data" / f"{stem}_{nm}.png")
+            json.dump(dict(image=img, box=b.box, bounds=[x0, y0, x1, y1], px_um=px, side_um=float(b.side_um), kind=kind, label=b.label, set=str(b.get("set", "practice")), v4_polys=polys, v5_polys=polys5, spots=spots,
                            v4_pct_of_box=round(100 * float(v4m.mean()), 2), gate3_pct_of_box=round(100 * float(gate3.mean()), 2)), open(M / "data" / f"{stem}.json", "w"))
             print(f"   {stem}: {W}x{Hh} px, v4 {100*v4m.mean():.1f}% gate3 {100*gate3.mean():.1f}%, {len(polys)} v4 objects, {len(spots)} practice spots", flush=True)
 if __name__ == "__main__": main()
