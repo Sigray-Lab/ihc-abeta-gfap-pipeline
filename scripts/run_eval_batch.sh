@@ -45,4 +45,11 @@ d=pd.concat([pd.read_csv(f) for f in sorted(glob.glob(f"{w}/w*.csv"))],ignore_in
 if tag: d.insert(0,"region",tag)
 d.to_csv(out,index=False); print(f"{len(d)} rows -> {out}")
 PY
+ROWS=$(( $(wc -l < "$OUT") - 1 ))
+FAILS=$(grep -c FAILED "$LOG" || true)
+if [ "$ROWS" -ne "$TOTAL" ] || [ "$FAILS" -gt 0 ]; then
+  say "INCOMPLETE: $ROWS of $TOTAL rows, $FAILS worker failure(s); kept $WORK"
+  echo "run_eval_batch: INCOMPLETE - $ROWS of $TOTAL rows, $FAILS worker failure(s); see $LOG and $WORK" >&2
+  exit 1
+fi
 say "DONE"; rm -rf "$WORK"

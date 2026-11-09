@@ -1823,3 +1823,24 @@ still holds the three replaced rescans and lacks the July originals V22_s01, L03
 measurement run, including GFAP. The "no photobleaching" withdrawal and other text corrections listed in the round-2 assessment are not
 all applied to older ADRs.
 
+## ADR-0041 — Lockdown follow-up: project rebuilt, classifiers frozen in the repo, anchor script restored, four production glass anchors found too low
+
+**Date:** 2026-11-09 · **Status:** accepted
+
+**Project rebuilt.** The QuPath project is rebuilt from the current manifest with the documented two commands, so it now holds the 121
+measured sections of ADR-0038, including the July originals V22_s01, L03_s03 and B16_s01; the old project is kept in the work archive.
+Reference boxes were re-imported. **Reproduction check:** four sections (T18_s03, B16_s01, A08_s04, C18_s01), both approaches,
+re-measured on the rebuilt project return Aβ areas identical to the saved rows.
+
+**Shipped for reuse.** The two frozen classifiers are now in `classifiers/abeta/` with SHA-256 values; `docs/RUNBOOK_abeta.md` gives
+the reproduce and new-image procedures; `scripts/run_eval_batch.sh` now exits non-zero when a worker fails or a row is missing
+(the silent-failure path of the round-2 review); `scripts/make_section_anchors.py` replaces the lost anchor-generation script.
+
+**Finding.** Validating that script against the production Cy3 table showed four sections whose production glass value is too
+low: G09_s03 (0), Y18_s04 (3), both controls, and Y06_s01 (1) and A08_s04 (24), both stained, against 37–44 on every other
+standard-exposure section. Their v4 gain is therefore 11–35 % too large and v4 reads low on them: with corrected anchors Y06_s01
+goes from 2.91 % to 4.62 % of tissue (hippocampus 0.55 % to 1.21 %) and A08_s04 from 2.67 % to 3.10 % (0.85 % to 1.06 %). Per-mouse
+hippocampal values move from 1.81 to 2.29 (Y06) and 1.17 to 1.25 (A08); the hippocampal diet result is unchanged (ratio 0.535,
+p 0.016). **Decision:** the locked tables keep the production anchors; the issue is recorded here and in the final README. The
+unnormalised approach is unaffected. New images use the script, whose glass values do not have this defect.
+

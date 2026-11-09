@@ -7,8 +7,10 @@ A human trains pixel classifiers in QuPath. This pipeline handles everything aro
 reading the vendor format, verifying the raw containers, building an auditable manifest,
 blinding the cohort, applying frozen classifiers at scale, and measuring.
 
-**Current status of pipeline/project: still in pre-measurement / pre-analysis.** Ingest, verification, manifest and blinding are built and
-tested. Classifier training and measurement are not.
+**Status, 2026-11-09: the Aβ measurement is complete and locked.** Two approaches are presented side by side, unnormalised and
+v4 GLOBAL (ADR-0040 in `docs/decisions.md`); the frozen classifiers are in `classifiers/abeta/` and `docs/RUNBOOK_abeta.md` shows how to
+reproduce the results or quantify new images. Other approaches that were tried are in `archive/`. GFAP has not been measured yet;
+`docs/HANDOFF_GFAP_2026-11-09.md` is the starting point for that work.
 
 ---
 
